@@ -112,11 +112,11 @@ describe("buildPrompt", () => {
 })
 
 
+describe("streamCodexCli", () => {
   it("does not expose an alternate HTTP transport", () => {
     expect(llmClient).not.toHaveProperty("streamViaLegacyHttp")
   })
 
-describe("streamCodexCli", () => {
   it.each(["openai", "anthropic", "claude-code", "custom", "ollama"] as const)("routes %s chat through the Codex CLI", async (provider) => {
     const callbacks = {
       onToken: vi.fn(),
