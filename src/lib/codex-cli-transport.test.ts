@@ -42,6 +42,7 @@ vi.mock("./claude-cli-transport", () => ({
 }))
 
 import { buildPrompt, parseCodexCliLine, streamCodexCli } from "./codex-cli-transport"
+import * as llmClient from "./llm-client"
 import { streamChat } from "./llm-client"
 import { useWikiStore } from "@/stores/wiki-store"
 
@@ -110,6 +111,10 @@ describe("buildPrompt", () => {
   })
 })
 
+
+  it("does not expose an alternate HTTP transport", () => {
+    expect(llmClient).not.toHaveProperty("streamViaLegacyHttp")
+  })
 
 describe("streamCodexCli", () => {
   it.each(["openai", "anthropic", "claude-code", "custom", "ollama"] as const)("routes %s chat through the Codex CLI", async (provider) => {
