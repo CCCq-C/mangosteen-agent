@@ -16,7 +16,7 @@ describe("resolveTaskLlmConfig", () => {
     expect(resolveTaskLlmConfig("chat", fallback, {}, {
       chatPresetId: null,
       ingestPresetId: null,
-    })).toBe(fallback)
+    }).provider).toBe("codex-cli")
   })
 
   it("resolves chat and ingest from independent provider presets", () => {
@@ -26,23 +26,15 @@ describe("resolveTaskLlmConfig", () => {
     }
     const routing = { chatPresetId: "openai", ingestPresetId: "anthropic" }
 
-    expect(resolveTaskLlmConfig("chat", fallback, configs, routing)).toMatchObject({
-      provider: "openai",
-      apiKey: "chat-key",
-      model: "gpt-4o-mini",
-    })
-    expect(resolveTaskLlmConfig("ingest", fallback, configs, routing)).toMatchObject({
-      provider: "anthropic",
-      apiKey: "ingest-key",
-      model: "claude-sonnet-4-6",
-    })
+    expect(resolveTaskLlmConfig("chat", fallback, configs, routing).provider).toBe("codex-cli")
+    expect(resolveTaskLlmConfig("ingest", fallback, configs, routing).provider).toBe("codex-cli")
   })
 
-  it("falls back when a persisted preset id no longer exists", () => {
+  it("falls back to Codex when a persisted preset id no longer exists", () => {
     expect(resolveTaskLlmConfig("ingest", fallback, {}, {
       chatPresetId: null,
       ingestPresetId: "removed-provider",
-    })).toBe(fallback)
+    }).provider).toBe("codex-cli")
   })
 
   it("routes tasks through a user-defined custom provider", () => {
@@ -54,12 +46,16 @@ describe("resolveTaskLlmConfig", () => {
       { chatPresetId: "custom-team", ingestPresetId: null },
       undefined,
       custom,
-    )).toMatchObject({
-      provider: "custom",
-      apiKey: "team-key",
-      model: "team-model",
-      customEndpoint: "https://gateway.example/v1",
-    })
+    ).provider).toBe("codex-cli")
+  })
+
+  it("routes an Ollama task preset through Codex", () => {
+    expect(resolveTaskLlmConfig(
+      "ingest",
+      fallback,
+      { ollama: { model: "qwen3:8b", baseUrl: "http://localhost:11434" } },
+      { chatPresetId: null, ingestPresetId: "ollama" },
+    ).provider).toBe("codex-cli")
   })
 })
 
@@ -78,7 +74,7 @@ describe("resolveProjectLlmConfig", () => {
       enabled: false,
       presetId: "anthropic",
       model: "project-model",
-    })).toBe(fallback)
+    }).provider).toBe("codex-cli")
   })
 
   it("uses global credentials with a project-specific provider and model", () => {
@@ -89,11 +85,7 @@ describe("resolveProjectLlmConfig", () => {
       presetId: "anthropic",
       model: "project-sonnet",
     })
-    expect(resolved).toMatchObject({
-      provider: "anthropic",
-      apiKey: "shared-secret",
-      model: "project-sonnet",
-    })
+    expect(resolved.provider).toBe("codex-cli")
   })
 
   it("supports a user-defined custom provider as a project override", () => {
@@ -102,12 +94,15 @@ describe("resolveProjectLlmConfig", () => {
       { "custom-team": { apiKey: "secret", baseUrl: "https://team.example/v1" } },
       { enabled: true, presetId: "custom-team", model: "project-model" },
       [{ id: "custom-team", label: "Team" }],
-    )).toMatchObject({
-      provider: "custom",
-      apiKey: "secret",
-      model: "project-model",
-      customEndpoint: "https://team.example/v1",
-    })
+    ).provider).toBe("codex-cli")
+  })
+
+  it("routes an Ollama project preset through Codex", () => {
+    expect(resolveProjectLlmConfig(
+      fallback,
+      { ollama: { model: "qwen3:8b", baseUrl: "http://localhost:11434" } },
+      { enabled: true, presetId: "ollama", model: "" },
+    ).provider).toBe("codex-cli")
   })
 
   it("makes a project override take precedence over global task routing", () => {
@@ -117,6 +112,6 @@ describe("resolveProjectLlmConfig", () => {
       { openai: { apiKey: "chat-key", model: "cheap-chat" } },
       { chatPresetId: "openai", ingestPresetId: null },
       { enabled: true, presetId: "anthropic", model: "project-sonnet" },
-    )).toMatchObject({ provider: "anthropic", model: "project-sonnet" })
+    ).provider).toBe("codex-cli")
   })
 })

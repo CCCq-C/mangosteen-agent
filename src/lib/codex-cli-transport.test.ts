@@ -19,6 +19,11 @@ const tauriMocks = vi.hoisted(() => {
   }
 })
 
+const transportMocks = vi.hoisted(() => ({
+  httpFetch: vi.fn(),
+  streamClaudeCodeCli: vi.fn(),
+}))
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: tauriMocks.invoke,
 }))
@@ -27,13 +32,25 @@ vi.mock("@tauri-apps/api/event", () => ({
   listen: tauriMocks.listen,
 }))
 
+vi.mock("./tauri-fetch", async () => {
+  const actual = await vi.importActual<typeof import("./tauri-fetch")>("./tauri-fetch")
+  return { ...actual, getHttpFetch: () => Promise.resolve(transportMocks.httpFetch) }
+})
+
+vi.mock("./claude-cli-transport", () => ({
+  streamClaudeCodeCli: transportMocks.streamClaudeCodeCli,
+}))
+
 import { buildPrompt, parseCodexCliLine, streamCodexCli } from "./codex-cli-transport"
+import { streamChat } from "./llm-client"
 import { useWikiStore } from "@/stores/wiki-store"
 
 beforeEach(() => {
   vi.clearAllMocks()
   tauriMocks.reset()
   tauriMocks.invoke.mockResolvedValue(undefined)
+  transportMocks.httpFetch.mockReset()
+  transportMocks.streamClaudeCodeCli.mockReset()
   useWikiStore.setState({
     project: {
       id: "test-project",
@@ -93,7 +110,53 @@ describe("buildPrompt", () => {
   })
 })
 
+
 describe("streamCodexCli", () => {
+  it.each(["openai", "anthropic", "claude-code", "custom", "ollama"] as const)("routes %s chat through the Codex CLI", async (provider) => {
+    const callbacks = {
+      onToken: vi.fn(),
+      onDone: vi.fn(),
+      onError: vi.fn(),
+    }
+
+    const stream = streamChat(
+      {
+        provider,
+        apiKey: "legacy-key",
+        model: "legacy-model",
+        ollamaUrl: "http://localhost:11434",
+        customEndpoint: "https://legacy.example/v1",
+        maxContextSize: 128000,
+      },
+      [{ role: "user", content: "Use Codex." }],
+      callbacks,
+    )
+
+    await vi.waitFor(() => {
+      expect(tauriMocks.invoke).toHaveBeenCalledWith(
+        "codex_cli_spawn",
+        expect.objectContaining({ model: "gpt-5.6-sol" }),
+      )
+    })
+    expect(transportMocks.httpFetch).not.toHaveBeenCalled()
+    expect(transportMocks.streamClaudeCodeCli).not.toHaveBeenCalled()
+
+    const payload = tauriMocks.invoke.mock.calls[0]?.[1] as { streamId: string }
+    tauriMocks.emit(`codex-cli:${payload.streamId}:done`, {
+      code: 0,
+      stderr: "",
+      stdout: JSON.stringify({
+        type: "item.completed",
+        item: { type: "agent_message", text: "Codex response" },
+      }),
+    })
+
+    await stream
+    expect(callbacks.onToken).toHaveBeenCalledWith("Codex response")
+    expect(callbacks.onDone).toHaveBeenCalledTimes(1)
+    expect(callbacks.onError).not.toHaveBeenCalled()
+  })
+
   it("does not resolve until the Codex CLI done event arrives", async () => {
     const callbacks = {
       onToken: vi.fn(),

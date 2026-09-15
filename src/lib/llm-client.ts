@@ -3,6 +3,7 @@ import { isAzureOpenAiEndpoint } from "@/lib/azure-openai"
 import { getProviderConfig, type RequestOverrides } from "./llm-providers"
 import { getHttpFetch, isFetchNetworkError } from "./tauri-fetch"
 import { countReasoningCharsInLine, extractReasoningTextFromLine } from "./reasoning-detector"
+import { toCodexOnlyConfig } from "./codex-only-config"
 
 export type { ChatMessage, ContentBlock, RequestOverrides } from "./llm-providers"
 export { isFetchNetworkError } from "./tauri-fetch"
@@ -51,6 +52,23 @@ async function streamViaCodexCli(
 ) {
   const mod = await import("./codex-cli-transport")
   return mod.streamCodexCli(config, messages, callbacks, signal, requestOverrides)
+}
+
+export async function streamChat(
+  config: LlmConfig,
+  messages: import("./llm-providers").ChatMessage[],
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal,
+  requestOverrides?: RequestOverrides,
+): Promise<void> {
+  const codexConfig = toCodexOnlyConfig(config)
+  return streamViaCodexCli(
+    codexConfig,
+    messages,
+    codexConfig.streamingEnabled === false ? bufferedStreamCallbacks(callbacks) : callbacks,
+    signal,
+    requestOverrides,
+  )
 }
 
 function parseLines(
@@ -161,7 +179,8 @@ function shouldRetryWithoutTemperature(
   )
 }
 
-export async function streamChat(
+/** @deprecated Compatibility-only HTTP transport; frontend calls use streamChat. */
+export async function streamViaLegacyHttp(
   config: LlmConfig,
   messages: import("./llm-providers").ChatMessage[],
   callbacks: StreamCallbacks,
