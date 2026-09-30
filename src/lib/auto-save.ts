@@ -40,7 +40,6 @@ export async function flushAndSuspendAutoSave(): Promise<void> {
     saveLintItems(projectPath, lint),
     saveChatPreferences(projectPath, {
       useWebSearch: chat.useWebSearch,
-      useAnyTxtSearch: chat.useAnyTxtSearch,
       agentMode: chat.agentMode,
       retrievalMode: chat.retrievalMode,
       selectedSkills: chat.selectedSkills,
@@ -116,7 +115,6 @@ export function setupAutoSave(): void {
         Promise.allSettled([
           saveChatPreferences(projectPath, {
             useWebSearch: state.useWebSearch,
-            useAnyTxtSearch: state.useAnyTxtSearch,
             agentMode: state.agentMode,
             retrievalMode: state.retrievalMode,
             selectedSkills: state.selectedSkills,

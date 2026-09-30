@@ -518,7 +518,7 @@ export async function embedAllPages(
     tree = await listDirectory(`${pp}/wiki`)
   } catch {
     if (options?.clearExisting) {
-      const message = "Could not read wiki tree; existing index was left unchanged."
+      const message = "无法读取知识库目录，现有索引未作更改。"
       setEmbeddingReindexState({ kind: "error", projectPath: pp, message })
       throw new Error(message)
     }

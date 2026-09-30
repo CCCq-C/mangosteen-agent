@@ -69,7 +69,7 @@ export type SearchProvider =
   | "bocha"
   | "firecrawl"
   | "none"
-export type DeepResearchSource = "web" | "anytxt" | "both"
+export type DeepResearchSource = "web"
 export type SerpApiEngine =
   | "google"
   | "google_news"
@@ -105,14 +105,6 @@ export interface SearchProviderOverride {
 
 export type SearchProviderConfigs = Partial<Record<Exclude<SearchProvider, "none">, SearchProviderOverride>>
 
-export interface AnyTxtConfig {
-  enabled?: boolean
-  endpoint?: string
-  filterDir?: string
-  filterExt?: string
-  limit?: number
-}
-
 interface SearchApiConfig {
   provider: SearchProvider
   apiKey: string
@@ -122,7 +114,6 @@ interface SearchApiConfig {
   ollamaUrl?: string
   providerConfigs?: SearchProviderConfigs
   deepResearchSource?: DeepResearchSource
-  anyTxt?: AnyTxtConfig
 }
 
 interface EmbeddingConfig {
@@ -357,6 +348,7 @@ export type ProviderConfigs = Record<string, ProviderOverride>
 export interface CustomLlmPreset {
   id: string
   label: string
+  basePresetId?: string
 }
 
 export interface TaskModelRoutingConfig {
@@ -492,22 +484,22 @@ export const useWikiStore = create<WikiState>((set) => ({
   pendingScrollImageSrc: null,
   activeView: "wiki",
   llmConfig: {
-    provider: "openai",
+    provider: "codex-cli",
     apiKey: "",
     maxContextSize: 204800,
-    model: "",
-    ollamaUrl: "http://localhost:11434",
+    model: "gpt-5.6-sol",
+    ollamaUrl: "",
     customEndpoint: "",
     azureApiVersion: "2024-10-21",
     reasoning: { mode: "auto" },
     localCliIsolation: false,
   },
   globalLlmConfig: {
-    provider: "openai",
+    provider: "codex-cli",
     apiKey: "",
     maxContextSize: 204800,
-    model: "",
-    ollamaUrl: "http://localhost:11434",
+    model: "gpt-5.6-sol",
+    ollamaUrl: "",
     customEndpoint: "",
     azureApiVersion: "2024-10-21",
     reasoning: { mode: "auto" },
@@ -515,13 +507,13 @@ export const useWikiStore = create<WikiState>((set) => ({
   },
   providerConfigs: {},
   customLlmPresets: [],
-  activePresetId: null,
+  activePresetId: "codex-cli",
   taskModelRouting: {
     chatPresetId: null,
     ingestPresetId: null,
   },
   projectLlmOverride: {
-    enabled: false,
+    enabled: true,
     presetId: null,
     model: "",
     profile: undefined,
@@ -574,20 +566,18 @@ export const useWikiStore = create<WikiState>((set) => ({
   setPendingScrollImageSrc: (pendingScrollImageSrc) => set({ pendingScrollImageSrc }),
   setActiveView: (activeView) => set({ activeView, previewReturnView: null }),
   searchApiConfig: {
-    provider: "none",
+    provider: "searxng",
     apiKey: "",
     serpApiEngine: "google",
-    searXngUrl: "",
+    searXngUrl: "http://127.0.0.1:17888",
     searXngCategories: ["general"],
-    providerConfigs: {},
-    deepResearchSource: "web",
-    anyTxt: {
-      enabled: false,
-      endpoint: "http://127.0.0.1:9920",
-      filterDir: "",
-      filterExt: "*",
-      limit: 20,
+    providerConfigs: {
+      searxng: {
+        searXngUrl: "http://127.0.0.1:17888",
+        searXngCategories: ["general"],
+      },
     },
+    deepResearchSource: "web",
   },
 
   embeddingConfig: {
@@ -598,12 +588,7 @@ export const useWikiStore = create<WikiState>((set) => ({
   },
 
   multimodalConfig: {
-    // Off by default — captioning is a non-trivial token spend
-    // (one VLM call per extracted image), and silently turning it
-    // on for every user the first time they import a PDF would be
-    // a budget surprise. Users who want it flip the toggle in
-    // Settings → Image captioning.
-    enabled: false,
+    enabled: true,
     useMainLlm: true,
     provider: "custom",
     apiKey: "",
@@ -618,8 +603,8 @@ export const useWikiStore = create<WikiState>((set) => ({
   outputLanguage: "auto",
 
   proxyConfig: {
-    enabled: false,
-    url: "",
+    enabled: true,
+    url: "http://127.0.0.1:7892",
     bypassLocal: true,
     acceptInvalidCerts: false,
   },
@@ -663,7 +648,7 @@ export const useWikiStore = create<WikiState>((set) => ({
 
   generalConfig: {
     autostart: false,
-    closeBehavior: "minimize",
+    closeBehavior: "exit",
   },
 
   graphUiState: createDefaultGraphUiState(),

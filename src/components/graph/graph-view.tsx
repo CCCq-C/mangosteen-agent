@@ -715,7 +715,7 @@ export function GraphView() {
       lastLoadedVersion.current = useWikiStore.getState().dataVersion
     } catch (err) {
       if (requestId !== graphLoadRequest.current) return
-      const message = err instanceof Error ? err.message : "Failed to build graph"
+      const message = err instanceof Error ? err.message : "构建知识图谱失败"
       setError(message)
     } finally {
       if (requestId === graphLoadRequest.current) setLoading(false)
@@ -852,8 +852,6 @@ export function GraphView() {
     queueResearch(
       normalizePath(store.project.path),
       researchDialog.topic,
-      store.llmConfig,
-      store.searchApiConfig,
       researchDialog.queries,
     )
     if (researchDialog.dismissKey) {

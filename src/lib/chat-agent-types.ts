@@ -16,7 +16,6 @@ export type ChatAgentEventStage =
   | "searching_wiki"
   | "searching_graph"
   | "searching_web"
-  | "searching_anytxt"
   | "reading_context"
   | "writing"
 
@@ -39,7 +38,6 @@ export type ChatAgentToolName =
   | "wiki_search"
   | "graph_search"
   | "web_search"
-  | "anytxt_search"
   | "shell_exec"
   | "unknown_tool"
 

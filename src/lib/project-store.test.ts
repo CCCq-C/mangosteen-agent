@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { __projectStoreTest } from "./project-store"
+import { __projectStoreTest, normalizeGeneralConfig } from "./project-store"
+
+describe("project-store Windows close behavior", () => {
+  it("migrates legacy hide and ask preferences to a real app exit", () => {
+    expect(normalizeGeneralConfig({ autostart: true, closeBehavior: "minimize" }))
+      .toEqual({ autostart: true, closeBehavior: "exit" })
+    expect(normalizeGeneralConfig({ autostart: false, closeBehavior: "ask" }))
+      .toEqual({ autostart: false, closeBehavior: "exit" })
+  })
+})
 
 describe("project-store MinerU config normalization", () => {
   it("preserves valid MinerU config values", () => {
@@ -95,6 +104,20 @@ describe("project-store custom LLM preset normalization", () => {
     ])).toEqual([
       { id: "custom-one", label: "Team Gateway" },
       { id: "custom-two", label: "x".repeat(80) },
+    ])
+  })
+
+  it("retains a valid base preset id and drops malformed or unknown values", () => {
+    expect(__projectStoreTest.normalizeCustomLlmPresets([
+      { id: "custom-codex", label: "Codex", basePresetId: "codex-cli" },
+      { id: "custom-garbage", label: "Garbage", basePresetId: "missing" },
+      { id: "custom-custom", label: "Custom", basePresetId: "custom" },
+      { id: "custom-malformed", label: "Malformed", basePresetId: 42 },
+    ])).toEqual([
+      { id: "custom-codex", label: "Codex", basePresetId: "codex-cli" },
+      { id: "custom-garbage", label: "Garbage" },
+      { id: "custom-custom", label: "Custom" },
+      { id: "custom-malformed", label: "Malformed" },
     ])
   })
 })

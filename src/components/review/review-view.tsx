@@ -98,10 +98,9 @@ export function ReviewView() {
         return
       }
       if (item) {
-        const llmConfig = useWikiStore.getState().llmConfig
         // Use pre-generated search queries if available, otherwise fall back to title
         const topic = item.title.replace(/^(Save to Wiki|Create|Research)[:\s]*/i, "").trim() || item.description.split("\n")[0]
-        queueResearch(pp, topic, llmConfig, searchConfig, item.searchQueries, id)
+        queueResearch(pp, topic, item.searchQueries, id)
       } else {
         resolveItem(id, action)
       }
@@ -150,7 +149,7 @@ export function ReviewView() {
         })
         useWikiStore.getState().openFileInPreview(filePath, pageContent)
 
-        resolveItem(id, "Saved to Wiki")
+        resolveItem(id, "已保存到知识库")
       } catch (err) {
         console.error("Failed to save to wiki from review:", err)
         setReviewError(id, err)
@@ -190,7 +189,7 @@ export function ReviewView() {
           projectId: project.id,
           bumpDataVersion: true,
         })
-        resolveItem(id, "Deleted")
+        resolveItem(id, "已删除")
       } catch (err) {
         console.error("Failed to delete:", err)
         setReviewError(id, err)
@@ -208,9 +207,8 @@ export function ReviewView() {
         return
       }
       if (item) {
-        const llmConfig = useWikiStore.getState().llmConfig
         const topic = action.replace(/^research\s*/i, "").trim() || item.description.split("\n")[0]
-        queueResearch(pp, topic, llmConfig, searchConfig, undefined, id)
+        queueResearch(pp, topic, undefined, id)
       } else {
         resolveItem(id, action)
       }
@@ -329,7 +327,7 @@ export function ReviewView() {
 
   const handleBatchResolve = useCallback(() => {
     for (const id of selectedPendingIds) {
-      resolveItem(id, "Bulk resolved")
+      resolveItem(id, "已批量处理")
     }
     setSelectedReviewIds(new Set())
   }, [resolveItem, selectedPendingIds])
@@ -366,8 +364,6 @@ export function ReviewView() {
         searchQueries: item.searchQueries,
         sourceReviewId: item.id,
       })),
-      state.llmConfig,
-      state.searchApiConfig,
     )
     const queuedIds = new Set(eligibleItems.map((item) => item.id))
     setSelectedReviewIds((current) => new Set([...current].filter((id) => !queuedIds.has(id))))
@@ -391,10 +387,10 @@ export function ReviewView() {
             onClick={handleRefresh}
             disabled={refreshing}
             className="text-xs"
-            title={t("review.refreshHint", "Reload review items from disk")}
+            title={t("review.refreshHint", "从磁盘重新加载建议")}
           >
             <RotateCcw className={`mr-1 h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-            {t("review.refresh", "Refresh")}
+            {t("review.refresh", "刷新")}
           </Button>
           {resolved.length > 0 && (
             <Button variant="ghost" size="sm" onClick={clearResolved} className="text-xs">

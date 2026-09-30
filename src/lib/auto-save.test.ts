@@ -141,8 +141,7 @@ describe("auto-save project-switch guard", () => {
 
     expect(saveChatHistory).not.toHaveBeenCalled()
     expect(saveChatPreferences).toHaveBeenCalledWith("/proj/A", {
-      useWebSearch: false,
-      useAnyTxtSearch: false,
+      useWebSearch: true,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],
@@ -155,7 +154,6 @@ describe("auto-save project-switch guard", () => {
     setProjectPath("/proj/A")
     useChatStore.setState({
       useWebSearch: true,
-      useAnyTxtSearch: true,
       agentMode: "local_first",
       retrievalMode: "smart",
       selectedSkills: ["reviewer"],
@@ -166,7 +164,6 @@ describe("auto-save project-switch guard", () => {
 
     expect(saveChatPreferences).toHaveBeenCalledWith("/proj/A", {
       useWebSearch: true,
-      useAnyTxtSearch: true,
       agentMode: "local_first",
       retrievalMode: "smart",
       selectedSkills: ["reviewer"],

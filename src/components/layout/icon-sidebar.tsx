@@ -78,7 +78,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
         <div className="mb-2 flex items-center justify-center">
           <img
             src={logoImg}
-            alt="LLM Wiki"
+            alt="山竹智能体"
             className="h-8 w-8 rounded-[22%]"
           />
         </div>
@@ -155,10 +155,10 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
               />
             </TooltipTrigger>
             <TooltipContent side="right">
-              {daemonStatus === "running" && "Clip server running"}
-              {daemonStatus === "starting" && "Clip server starting..."}
-              {daemonStatus === "port_conflict" && "Port 19827 is occupied. Web Clipper unavailable."}
-              {daemonStatus === "error" && "Clip server error. Restarting..."}
+              {daemonStatus === "running" && "网页剪藏服务运行中"}
+              {daemonStatus === "starting" && "网页剪藏服务正在启动……"}
+              {daemonStatus === "port_conflict" && "端口 19827 已被占用，网页剪藏暂不可用。"}
+              {daemonStatus === "error" && "网页剪藏服务异常，正在重启……"}
             </TooltipContent>
           </Tooltip>
           <Tooltip>

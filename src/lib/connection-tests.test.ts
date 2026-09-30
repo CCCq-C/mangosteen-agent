@@ -52,7 +52,7 @@ describe("provider connection tests", () => {
     const result = await testEmbeddingConnection(embeddingConfig)
 
     expect(result.ok).toBe(true)
-    expect(result.message).toContain("3 dimensions")
+    expect(result.message).toContain("3 维向量")
     expect(fetchEmbeddingMock).toHaveBeenCalledWith(expect.any(String), embeddingConfig, 0)
   })
 
@@ -64,7 +64,7 @@ describe("provider connection tests", () => {
     const result = await testEmbeddingFunction(embeddingConfig)
 
     expect(result.ok).toBe(false)
-    expect(result.message).toContain("dimension changed")
+    expect(result.message).toContain("向量维度不一致")
   })
 
   it("passes LLM connection when any content is streamed", async () => {
@@ -76,7 +76,29 @@ describe("provider connection tests", () => {
     const result = await testLlmConnection(llmConfig)
 
     expect(result.ok).toBe(true)
-    expect(result.message).toContain("Response: OK")
+    expect(result.message).toContain("模型回复：OK")
+  })
+
+  it.each([
+    ["hosted API key", { ...llmConfig, provider: "openai" as const, apiKey: "" }, "需要填写 API 密钥"],
+    ["custom endpoint", { ...llmConfig, customEndpoint: "" }, "尚未填写服务地址"],
+    ["model name", { ...llmConfig, model: "" }, "尚未填写模型"],
+  ])("does not send a connection request when the %s is missing", async (_label, cfg, message) => {
+    const result = await testLlmConnection(cfg)
+
+    expect(result).toEqual({ ok: false, message })
+    expect(streamChatMock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["hosted API key", { ...llmConfig, provider: "openai" as const, apiKey: "" }, "需要填写 API 密钥"],
+    ["custom endpoint", { ...llmConfig, customEndpoint: "" }, "尚未填写服务地址"],
+    ["model name", { ...llmConfig, model: "" }, "尚未填写模型"],
+  ])("does not send a functional request when the %s is missing", async (_label, cfg, message) => {
+    const result = await testLlmFunction(cfg)
+
+    expect(result).toEqual({ ok: false, message })
+    expect(streamChatMock).not.toHaveBeenCalled()
   })
 
   it("validates LLM functional output token", async () => {

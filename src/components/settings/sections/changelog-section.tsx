@@ -12,11 +12,11 @@ export function ChangelogSection() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">
-          {t("settings.sections.changelog.title", { defaultValue: "Changelog" })}
+          {t("settings.sections.changelog.title", { defaultValue: "更新日志" })}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.changelog.description", {
-            defaultValue: "Notable user-visible changes in each released version, newest first.",
+            defaultValue: "各版本面向用户的重要变更，按最新版本优先。",
           })}
         </p>
       </div>

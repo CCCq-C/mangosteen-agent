@@ -8,6 +8,7 @@ describe("getAppLayoutVisibility", () => {
     expect(getAppLayoutVisibility("chat", true)).toEqual({
       showLeftPanel: false,
       hasRightPanel: false,
+      keepChatMounted: true,
     })
   })
 
@@ -15,6 +16,7 @@ describe("getAppLayoutVisibility", () => {
     expect(getAppLayoutVisibility("settings", true)).toEqual({
       showLeftPanel: false,
       hasRightPanel: false,
+      keepChatMounted: true,
     })
   })
 
@@ -22,6 +24,7 @@ describe("getAppLayoutVisibility", () => {
     expect(getAppLayoutVisibility("skills", true)).toEqual({
       showLeftPanel: false,
       hasRightPanel: false,
+      keepChatMounted: true,
     })
   })
 
@@ -29,10 +32,12 @@ describe("getAppLayoutVisibility", () => {
     expect(getAppLayoutVisibility("wiki", false)).toEqual({
       showLeftPanel: true,
       hasRightPanel: false,
+      keepChatMounted: true,
     })
     expect(getAppLayoutVisibility("search", true)).toEqual({
       showLeftPanel: true,
       hasRightPanel: true,
+      keepChatMounted: true,
     })
   })
 })

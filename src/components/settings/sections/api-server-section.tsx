@@ -137,13 +137,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
   -H 'Content-Type: application/json' \\
   -H 'Accept: text/event-stream' \\
   ${API_SERVER_BASE_URL}/api/v1/projects/current/chat \\
-  -d '{"message":"Summarize this knowledge base.","stream":true}'`
+  -d '{"message":"总结这个知识库。","stream":true}'`
   }, [draft.apiToken, health?.tokenSource])
 
   const sampleMcpConfig = useMemo(() => {
     if (!mcpEntryPath) return ""
     const env = health?.tokenSource === "env"
-      ? { LLM_WIKI_API_TOKEN: "<same value as the LLM Wiki process environment>" }
+      ? { LLM_WIKI_API_TOKEN: "<与山竹智能体进程环境变量相同的值>" }
       : draft.apiToken
         ? { LLM_WIKI_API_TOKEN: draft.apiToken }
         : draft.apiAllowUnauthenticated
@@ -210,27 +210,27 @@ export function ApiServerSection({ draft, setDraft }: Props) {
 
   const statusLabel = useMemo(() => {
     if (!draft.apiEnabled) {
-      return t("settings.sections.apiServer.statusDisabled", { defaultValue: "Disabled" })
+      return t("settings.sections.apiServer.statusDisabled", { defaultValue: "已禁用" })
     }
     if (health?.allowUnauthenticated || draft.apiAllowUnauthenticated) {
-      return t("settings.sections.apiServer.statusOpen", { defaultValue: "Running, no auth" })
+      return t("settings.sections.apiServer.statusOpen", { defaultValue: "运行中，无需鉴权" })
     }
     if (serverStatus === "running" && health?.authConfigured === false && !draft.apiToken) {
-      return t("settings.sections.apiServer.statusNoToken", { defaultValue: "Running, no token" })
+      return t("settings.sections.apiServer.statusNoToken", { defaultValue: "运行中，未配置访问令牌" })
     }
     switch (serverStatus) {
       case "running":
-        return t("settings.sections.apiServer.statusRunning", { defaultValue: "Running" })
+        return t("settings.sections.apiServer.statusRunning", { defaultValue: "运行中" })
       case "starting":
-        return t("settings.sections.apiServer.statusStarting", { defaultValue: "Starting…" })
+        return t("settings.sections.apiServer.statusStarting", { defaultValue: "启动中……" })
       case "port_conflict":
         return t("settings.sections.apiServer.statusPortConflict", {
-          defaultValue: "Port 19828 in use",
+          defaultValue: "端口 19828 已被占用",
         })
       case "error":
-        return t("settings.sections.apiServer.statusError", { defaultValue: "Error" })
+        return t("settings.sections.apiServer.statusError", { defaultValue: "错误" })
       case "unknown":
-        return t("settings.sections.apiServer.statusUnknown", { defaultValue: "Unknown" })
+        return t("settings.sections.apiServer.statusUnknown", { defaultValue: "未知" })
       default:
         return serverStatus
     }
@@ -266,7 +266,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.apiServer.description", {
             defaultValue:
-              "Expose LLM Wiki to your own tools through the local HTTP API, and optionally through the bundled MCP server for agent clients.",
+              "通过本地 HTTP API 把山竹智能体连接到其他工具，也可以通过内置 MCP 服务连接智能体客户端。",
           })}
         </p>
       </div>
@@ -284,13 +284,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
             <div className="flex items-center gap-2 text-sm font-semibold">
               <Server className="h-4 w-4 text-muted-foreground" />
               {t("settings.sections.apiServer.enable", {
-                defaultValue: "Enable local HTTP API",
+                defaultValue: "启用本地 HTTP API",
               })}
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {t("settings.sections.apiServer.enableHint", {
                 defaultValue:
-                  "Disable to make every non-/health endpoint return 503 even if a token is configured. Useful as a kill-switch without unsetting the token.",
+                  "关闭后，除 /health 外的接口都会返回 503。无需删除令牌即可暂时停用服务。",
               })}
             </p>
           </div>
@@ -306,13 +306,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
           <div className="space-y-1">
             <div className="text-sm font-semibold text-amber-900 dark:text-amber-200">
               {t("settings.sections.apiServer.allowUnauthenticated", {
-                defaultValue: "Allow access without a token",
+                defaultValue: "允许无访问令牌连接",
               })}
             </div>
             <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
               {t("settings.sections.apiServer.allowUnauthenticatedHint", {
                 defaultValue:
-                  "Use only for trusted local agents. Any process or browser page on this machine can call the API while this is enabled.",
+                  "仅建议在可信的本机环境中使用。开启后，本机其他程序或网页也能调用接口。",
               })}
             </p>
           </div>
@@ -328,13 +328,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
           <div className="space-y-1">
             <div className="text-sm font-semibold">
               {t("settings.sections.apiServer.allowLanAccess", {
-                defaultValue: "Allow API and Clip server access from the local network",
+                defaultValue: "允许 API 和网页剪藏服务从局域网访问",
               })}
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {t("settings.sections.apiServer.allowLanAccessHint", {
                 defaultValue:
-                  "After restarting the app, the API and Clip server listen on 0.0.0.0 instead of 127.0.0.1. Use only on trusted networks, and keep token auth enabled unless you fully trust the LAN.",
+                  "重启软件后，API 和剪贴服务将监听 0.0.0.0，而不是 127.0.0.1。仅在可信网络中使用，并建议保留令牌验证。",
               })}
             </p>
           </div>
@@ -343,13 +343,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <div className="grid grid-cols-1 gap-3 rounded-md border border-border/60 bg-background/40 p-3 text-sm sm:grid-cols-2">
           <div className="space-y-0.5">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              {t("settings.sections.apiServer.status", { defaultValue: "Status" })}
+              {t("settings.sections.apiServer.status", { defaultValue: "状态" })}
             </div>
             <div className={`font-mono text-xs ${statusToneClass}`}>{statusLabel}</div>
           </div>
           <div className="space-y-0.5">
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-              {t("settings.sections.apiServer.baseUrl", { defaultValue: "Base URL" })}
+              {t("settings.sections.apiServer.baseUrl", { defaultValue: "服务地址" })}
             </div>
             <div className="font-mono text-xs">{API_SERVER_BASE_URL}</div>
           </div>
@@ -358,11 +358,11 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleOpenHealth} className="gap-1.5">
             <ExternalLink className="h-3.5 w-3.5" />
-            {t("settings.sections.apiServer.openHealth", { defaultValue: "Open /health" })}
+            {t("settings.sections.apiServer.openHealth", { defaultValue: "打开 /health" })}
           </Button>
           <span className="text-[11px] text-muted-foreground">
             {t("settings.sections.apiServer.openHealthHint", {
-              defaultValue: "/health never requires authentication. Other endpoints follow the access mode below, except Agent chat, which always requires a token.",
+              defaultValue: "/health 无需身份验证。其他接口遵循下方访问设置，但智能体对话始终需要令牌。",
             })}
           </span>
         </div>
@@ -372,18 +372,18 @@ export function ApiServerSection({ draft, setDraft }: Props) {
       <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4">
         <div>
           <h3 className="text-sm font-semibold">
-            {t("settings.sections.apiServer.token", { defaultValue: "Access token" })}
+            {t("settings.sections.apiServer.token", { defaultValue: "访问令牌" })}
           </h3>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
             {t("settings.sections.apiServer.tokenHint", {
               defaultValue:
-                "Send as `Authorization: Bearer <token>` or `X-LLM-Wiki-Token: <token>`. Read-oriented endpoints may omit it when unauthenticated access is enabled, but Agent chat and cancellation always require it. The environment variable LLM_WIKI_API_TOKEN overrides this field if set.",
+                "请通过 `Authorization: Bearer <token>` 或 `X-LLM-Wiki-Token: <token>` 发送令牌。允许免验证访问时，读取类接口可以省略令牌，但智能体对话和取消操作仍需令牌。环境变量 LLM_WIKI_API_TOKEN 会覆盖此处设置。",
             })}
           </p>
         </div>
 
         <Label htmlFor="api-token-input" className="sr-only">
-          {t("settings.sections.apiServer.token", { defaultValue: "Access token" })}
+          {t("settings.sections.apiServer.token", { defaultValue: "访问令牌" })}
         </Label>
         <div className="flex gap-2">
           <Input
@@ -392,7 +392,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
             value={draft.apiToken}
             onChange={(event) => setDraft("apiToken", event.target.value)}
             placeholder={t("settings.sections.apiServer.tokenPlaceholder", {
-              defaultValue: "Paste an existing token or click Generate",
+              defaultValue: "粘贴已有令牌，或点击生成",
             })}
             className="font-mono"
             autoComplete="off"
@@ -405,13 +405,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
             onClick={() => setShowToken((value) => !value)}
             title={
               showToken
-                ? t("settings.sections.apiServer.hide", { defaultValue: "Hide" })
-                : t("settings.sections.apiServer.show", { defaultValue: "Show" })
+                ? t("settings.sections.apiServer.hide", { defaultValue: "隐藏" })
+                : t("settings.sections.apiServer.show", { defaultValue: "显示" })
             }
             aria-label={
               showToken
-                ? t("settings.sections.apiServer.hide", { defaultValue: "Hide" })
-                : t("settings.sections.apiServer.show", { defaultValue: "Show" })
+                ? t("settings.sections.apiServer.hide", { defaultValue: "隐藏" })
+                : t("settings.sections.apiServer.show", { defaultValue: "显示" })
             }
           >
             {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -422,8 +422,8 @@ export function ApiServerSection({ draft, setDraft }: Props) {
             size="icon"
             onClick={handleCopyToken}
             disabled={!draft.apiToken}
-            title={t("settings.sections.apiServer.copy", { defaultValue: "Copy" })}
-            aria-label={t("settings.sections.apiServer.copy", { defaultValue: "Copy" })}
+            title={t("settings.sections.apiServer.copy", { defaultValue: "复制" })}
+            aria-label={t("settings.sections.apiServer.copy", { defaultValue: "复制" })}
           >
             <Copy className="h-4 w-4" />
           </Button>
@@ -432,45 +432,45 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <div className="flex items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={handleGenerate} className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" />
-            {t("settings.sections.apiServer.generate", { defaultValue: "Generate new token" })}
+            {t("settings.sections.apiServer.generate", { defaultValue: "生成新令牌" })}
           </Button>
           {copiedField === "token" && (
             <span className="text-xs text-emerald-600 dark:text-emerald-400">
-              {t("settings.sections.apiServer.copied", { defaultValue: "Copied" })}
+              {t("settings.sections.apiServer.copied", { defaultValue: "已复制" })}
             </span>
           )}
           {tokenStrength === "missing" && (
             <span className="text-xs text-amber-700 dark:text-amber-400">
               {t("settings.sections.apiServer.tokenMissing", {
-                defaultValue: "No token — Agent chat is unavailable and protected endpoints return 401",
+                defaultValue: "未配置访问令牌——智能体对话不可用，受保护的接口会返回 401",
               })}
             </span>
           )}
           {tokenStrength === "unused" && health?.tokenSource !== "env" && (
             <span className="text-xs text-amber-700 dark:text-amber-400">
               {t("settings.sections.apiServer.tokenUnused", {
-                defaultValue: "Read endpoints are open, but Agent chat still uses this token",
+                defaultValue: "读取类接口已开放，但智能体对话仍使用此令牌",
               })}
             </span>
           )}
           {health?.tokenSource === "env" && (
             <span className="text-xs text-amber-700 dark:text-amber-400">
               {t("settings.sections.apiServer.envTokenActive", {
-                defaultValue: "LLM_WIKI_API_TOKEN is active and overrides this field",
+                defaultValue: "LLM_WIKI_API_TOKEN 正在生效，并会覆盖此处填写的令牌",
               })}
             </span>
           )}
           {hasUnsavedApiConfig && (
             <span className="text-xs text-muted-foreground">
               {t("settings.sections.apiServer.saveFirst", {
-                defaultValue: "Save settings to apply API changes",
+                defaultValue: "保存设置后 API 改动才会生效",
               })}
             </span>
           )}
           {tokenStrength === "weak" && (
             <span className="text-xs text-amber-700 dark:text-amber-400">
               {t("settings.sections.apiServer.tokenWeak", {
-                defaultValue: "Token is short — consider Generate for 256-bit entropy",
+                defaultValue: "令牌长度偏短，建议重新生成一个更安全的令牌",
               })}
             </span>
           )}
@@ -482,13 +482,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
             <div>
               {t("settings.sections.apiServer.tokenWarning", {
                 defaultValue:
-                  "Keep this token secret. Anyone with the token on this machine can read your project files via localhost.",
+                  "请妥善保管令牌。任何拿到令牌的本机程序都可能通过 localhost 读取项目文件。",
               })}
             </div>
             <div>
               {t("settings.sections.apiServer.tokenQueryWarning", {
                 defaultValue:
-                  "Prefer the Authorization header — passing ?token=… via URL leaks the value into shell history, logs, and Referer headers.",
+                  "建议使用 Authorization 请求头。通过网址传递 ?token=… 可能把令牌泄露到命令历史、日志和 Referer 请求头中。",
               })}
             </div>
           </div>
@@ -499,7 +499,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
       <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">
-            {t("settings.sections.apiServer.sample", { defaultValue: "Example request" })}
+            {t("settings.sections.apiServer.sample", { defaultValue: "示例请求" })}
           </h3>
           <Button
             type="button"
@@ -511,14 +511,14 @@ export function ApiServerSection({ draft, setDraft }: Props) {
           >
             <Copy className="h-3.5 w-3.5" />
             {copiedField === "curl"
-              ? t("settings.sections.apiServer.copied", { defaultValue: "Copied" })
-              : t("settings.sections.apiServer.copy", { defaultValue: "Copy" })}
+              ? t("settings.sections.apiServer.copied", { defaultValue: "已复制" })
+              : t("settings.sections.apiServer.copy", { defaultValue: "复制" })}
           </Button>
         </div>
         <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-background/60 px-3 py-2 text-[11px] font-mono leading-relaxed">
           {hasUnsavedApiConfig
             ? t("settings.sections.apiServer.saveFirstExample", {
-                defaultValue: "Save settings first, then copy an example request.",
+                defaultValue: "请先保存设置，然后再复制示例请求。",
               })
             : sampleCurl}
         </pre>
@@ -529,56 +529,56 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold">
-              {t("settings.sections.apiServer.chatTitle", { defaultValue: "Agent chat and streaming" })}
+              {t("settings.sections.apiServer.chatTitle", { defaultValue: "智能体对话与流式输出" })}
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
               {t("settings.sections.apiServer.chatHint", {
                 defaultValue:
-                  "POST a message to /chat. The default response is one JSON document. Set stream: true or send Accept: text/event-stream to receive SSE frames while the Agent works.",
+                  "向 /chat 发送 POST 消息。默认返回一份 JSON；设置 stream: true 或发送 Accept: text/event-stream，可在智能体工作时接收 SSE 流式消息。",
               })}
             </p>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={handleCopyChatCurl} disabled={hasUnsavedApiConfig} className="shrink-0 gap-1.5">
             <Copy className="h-3.5 w-3.5" />
             {copiedField === "chat"
-              ? t("settings.sections.apiServer.copied", { defaultValue: "Copied" })
-              : t("settings.sections.apiServer.copy", { defaultValue: "Copy" })}
+              ? t("settings.sections.apiServer.copied", { defaultValue: "已复制" })
+              : t("settings.sections.apiServer.copy", { defaultValue: "复制" })}
           </Button>
         </div>
         <div className="grid gap-2 text-xs sm:grid-cols-2">
           <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
-            <div className="font-medium">{t("settings.sections.apiServer.chatJsonTitle", { defaultValue: "JSON mode" })}</div>
+            <div className="font-medium">{t("settings.sections.apiServer.chatJsonTitle", { defaultValue: "JSON 模式" })}</div>
             <p className="mt-1 leading-relaxed text-muted-foreground">
-              {t("settings.sections.apiServer.chatJsonHint", { defaultValue: "Omit stream or set it to false. The request returns after the complete Agent turn." })}
+              {t("settings.sections.apiServer.chatJsonHint", { defaultValue: "省略 stream 或设为 false。智能体完成一轮任务后返回结果。" })}
             </p>
           </div>
           <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
-            <div className="font-medium">{t("settings.sections.apiServer.chatSseTitle", { defaultValue: "SSE mode" })}</div>
+            <div className="font-medium">{t("settings.sections.apiServer.chatSseTitle", { defaultValue: "SSE 模式" })}</div>
             <p className="mt-1 leading-relaxed text-muted-foreground">
-              {t("settings.sections.apiServer.chatSseHint", { defaultValue: "Frames: meta, incremental agent events, then done, cancelled, or error. done contains the complete aggregate response." })}
+              {t("settings.sections.apiServer.chatSseHint", { defaultValue: "事件依次为 meta、智能体增量事件，以及 done、cancelled 或 error；done 包含完整结果。" })}
             </p>
           </div>
         </div>
         <div className="flex items-start gap-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
           <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            {t("settings.sections.apiServer.chatTokenRequired", { defaultValue: "Agent chat and its cancellation endpoint always require a token, even when read endpoints allow unauthenticated access." })}
+            {t("settings.sections.apiServer.chatTokenRequired", { defaultValue: "智能体对话及取消接口始终需要访问令牌，即使读取类接口允许无认证访问。" })}
           </span>
         </div>
         <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-background/60 px-3 py-2 text-[11px] font-mono leading-relaxed">
           {hasUnsavedApiConfig
-            ? t("settings.sections.apiServer.saveFirstExample", { defaultValue: "Save settings first, then copy an example request." })
+            ? t("settings.sections.apiServer.saveFirstExample", { defaultValue: "请先保存设置，然后再复制示例请求。" })
             : sampleChatCurl}
         </pre>
       </div>
 
       <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4">
         <h3 className="text-sm font-semibold">
-          {t("settings.sections.apiServer.endpoints", { defaultValue: "Endpoints" })}
+          {t("settings.sections.apiServer.endpoints", { defaultValue: "接口列表" })}
         </h3>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {t("settings.sections.apiServer.endpointsHint", {
-            defaultValue: "Replace {id} with a project UUID, a project filesystem path, or the literal 'current'.",
+            defaultValue: "将 {id} 替换为项目 UUID、项目文件路径或固定值 'current'。",
           })}
         </p>
         <div className="space-y-1 text-xs">
@@ -622,13 +622,13 @@ export function ApiServerSection({ draft, setDraft }: Props) {
           <div className="space-y-1">
             <div className="text-sm font-semibold">
               {t("settings.sections.apiServer.mcpEnable", {
-                defaultValue: "Enable MCP access",
+                defaultValue: "启用 MCP 访问",
               })}
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {t("settings.sections.apiServer.mcpEnableHint", {
                 defaultValue:
-                  "MCP uses the local API and the same token rules. Keep the HTTP API enabled, then connect an MCP client to the bundled Node server.",
+                  "MCP 使用本地 API 和相同的令牌规则。请保持 HTTP API 开启，再把 MCP 客户端连接到内置 Node 服务。",
               })}
             </p>
           </div>
@@ -637,7 +637,7 @@ export function ApiServerSection({ draft, setDraft }: Props) {
         <div className="rounded-md border border-border/50 bg-background/50 p-3">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">
-              {t("settings.sections.apiServer.mcpUsage", { defaultValue: "MCP usage" })}
+              {t("settings.sections.apiServer.mcpUsage", { defaultValue: "MCP 使用说明" })}
             </h3>
             <Button
               type="button"
@@ -649,14 +649,14 @@ export function ApiServerSection({ draft, setDraft }: Props) {
             >
               <Copy className="h-3.5 w-3.5" />
               {copiedField === "mcp"
-                ? t("settings.sections.apiServer.copied", { defaultValue: "Copied" })
-                : t("settings.sections.apiServer.copy", { defaultValue: "Copy" })}
+                ? t("settings.sections.apiServer.copied", { defaultValue: "已复制" })
+                : t("settings.sections.apiServer.copy", { defaultValue: "复制" })}
             </Button>
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
             {t("settings.sections.apiServer.mcpUsageHint", {
               defaultValue:
-                "Build once with `npm run mcp:build`, then configure your MCP client to run the server below. Use LLM_WIKI_API_TOKEN unless unauthenticated access is enabled.",
+                "先运行一次 `npm run mcp:build`，再让 MCP 客户端启动下方服务。除非已允许免验证访问，否则请设置 LLM_WIKI_API_TOKEN。",
             })}
           </p>
           {mcpPathError && (
@@ -667,12 +667,12 @@ export function ApiServerSection({ draft, setDraft }: Props) {
           <pre className="mt-3 overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-background/60 px-3 py-2 text-[11px] font-mono leading-relaxed">
             {hasUnsavedApiConfig
               ? t("settings.sections.apiServer.saveFirstExample", {
-                  defaultValue: "Save settings first, then copy an example request.",
+                  defaultValue: "请先保存设置，然后再复制示例请求。",
                 })
               : !mcpEntryPath
                 ? t("settings.sections.apiServer.mcpPathUnavailable", {
                     defaultValue:
-                      "MCP server entry was not found. Run `npm run mcp:build` from the LLM Wiki repository, then reopen Settings.",
+                      "未找到 MCP 服务入口。请在山竹智能体项目目录运行 `npm run mcp:build`，然后重新打开设置。",
                   })
               : sampleMcpConfig}
           </pre>

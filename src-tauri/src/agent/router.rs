@@ -8,6 +8,7 @@ pub enum QueryIntent {
     NeedsInternalSearch,
     NeedsExternalSearch,
     NeedsRawSourceSearch,
+    NeedsSourceImport,
     NeedsGraph,
     NeedsWrite,
     SimpleConversational,
@@ -24,7 +25,6 @@ pub struct RouterDecision {
     // available.
     pub should_search_wiki: bool,
     pub should_hint_web: bool,
-    pub should_hint_anytxt: bool,
     pub should_include_sources: bool,
     pub rationale: String,
 }
@@ -58,6 +58,20 @@ pub fn route_query(message: &str, mode: AgentMode, tools: &AgentToolOptions) -> 
         ],
     );
     let explicit_graph = contains_any(&lower, &["graph", "relationship", "知识图谱", "关系图"]);
+    let explicit_source_import = looks_like_windows_path(message)
+        && contains_any(
+            &lower,
+            &[
+                "保存到知识库",
+                "存入知识库",
+                "导入资料库",
+                "导入知识库",
+                "收录到山竹",
+                "记住这个文件",
+                "归档到",
+            ],
+        )
+        && !contains_any(&lower, &["不要", "不用", "不需要", "禁止"]);
     let explicit_write = contains_any(
         &lower,
         &["write to wiki", "create page", "写入", "创建页面"],
@@ -68,7 +82,9 @@ pub fn route_query(message: &str, mode: AgentMode, tools: &AgentToolOptions) -> 
             &["hi", "hello", "thanks", "谢谢", "你好", "好的", "ok"],
         );
 
-    let intent = if explicit_write {
+    let intent = if explicit_source_import {
+        QueryIntent::NeedsSourceImport
+    } else if explicit_write {
         QueryIntent::NeedsWrite
     } else if explicit_graph {
         QueryIntent::NeedsGraph
@@ -92,8 +108,7 @@ pub fn route_query(message: &str, mode: AgentMode, tools: &AgentToolOptions) -> 
     RouterDecision {
         intent,
         should_search_wiki,
-        should_hint_web: tools.web,
-        should_hint_anytxt: tools.anytxt,
+        should_hint_web: tools.web && !explicit_source_import,
         should_include_sources: explicit_raw || matches!(mode, AgentMode::Deep),
         rationale: match intent {
             QueryIntent::NeedsExternalSearch => {
@@ -104,6 +119,9 @@ pub fn route_query(message: &str, mode: AgentMode, tools: &AgentToolOptions) -> 
             }
             QueryIntent::NeedsRawSourceSearch => {
                 "User explicitly referenced raw/source material.".to_string()
+            }
+            QueryIntent::NeedsSourceImport => {
+                "User asks to import a local file into the knowledge base.".to_string()
             }
             QueryIntent::NeedsGraph => "User asks about graph/relationships.".to_string(),
             QueryIntent::NeedsWrite => "User asks to create or update wiki content.".to_string(),
@@ -122,6 +140,12 @@ fn contains_any(value: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| value.contains(needle))
 }
 
+fn looks_like_windows_path(value: &str) -> bool {
+    value.as_bytes().windows(3).any(|part| {
+        part[0].is_ascii_alphabetic() && part[1] == b':' && matches!(part[2], b'\\' | b'/')
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,7 +158,6 @@ mod tests {
             &AgentToolOptions {
                 wiki: true,
                 web: true,
-                anytxt: false,
             },
         );
         assert_eq!(decision.intent, QueryIntent::NeedsExternalSearch);
@@ -151,5 +174,20 @@ mod tests {
         );
         assert_eq!(decision.intent, QueryIntent::Ambiguous);
         assert!(!decision.should_search_wiki);
+    }
+
+    #[test]
+    fn router_separates_local_source_import_from_generic_wiki_writes() {
+        let decision = route_query(
+            r#""C:\Users\c1773\Downloads\培训资料.pdf" 帮我保存到知识库"#,
+            AgentMode::Standard,
+            &AgentToolOptions {
+                wiki: true,
+                web: true,
+            },
+        );
+
+        assert_eq!(decision.intent, QueryIntent::NeedsSourceImport);
+        assert!(!decision.should_hint_web);
     }
 }

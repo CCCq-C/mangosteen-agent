@@ -85,7 +85,7 @@ function FilePreviewContent({ filePath, textContent }: FilePreviewProps) {
       }
       return <CodePreview filePath={filePath} content={textContent} />
     case "text":
-      return <TextPreview filePath={filePath} content={textContent} label="Text" />
+      return <TextPreview filePath={filePath} content={textContent} label="文本" />
     case "document":
       if (isExtractedTextPreviewFile(filePath)) {
         return <TextPreview filePath={filePath} content={textContent} label={extractedTextLabel(filePath)} />
@@ -172,7 +172,7 @@ function PdfPreview({ filePath, content }: { filePath: string; content: string }
         const viewport = pdfPage.getViewport({ scale: (zoom / 100) * 1.25 })
         const pixelRatio = window.devicePixelRatio || 1
         const context = canvas.getContext("2d")
-        if (!context) throw new Error("Canvas 2D rendering is unavailable")
+        if (!context) throw new Error("当前环境无法进行 Canvas 2D 渲染")
         canvas.width = Math.floor(viewport.width * pixelRatio)
         canvas.height = Math.floor(viewport.height * pixelRatio)
         canvas.style.width = `${Math.floor(viewport.width)}px`
@@ -205,7 +205,7 @@ function PdfPreview({ filePath, content }: { filePath: string; content: string }
       <button type="button" onClick={() => void openPath(filePath)} className="rounded p-1 hover:bg-muted" title={t("preview.openWithSystem")} aria-label={t("preview.openWithSystem")}><ExternalLink className="h-3.5 w-3.5" /></button>
     </div>
     <div className="min-h-0 flex-1 overflow-hidden rounded-md border bg-white">
-      {showText ? <TextPreview filePath={filePath} content={content} label="PDF text" /> : loading ? (
+      {showText ? <TextPreview filePath={filePath} content={content} label="PDF 文本" /> : loading ? (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t("preview.pdfLoading")}</div>
       ) : loadError ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
@@ -349,10 +349,10 @@ function isAgentWorkspacePath(filePath: string): boolean {
 function extractedTextLabel(filePath: string): string {
   switch (getFileExtension(filePath)) {
     case "doc":
-      return "Word DOC (extracted text)"
+      return "Word DOC（已提取文本）"
     case "docx":
     case "docm":
-      return "Word DOCX (extracted text)"
+      return "Word DOCX（已提取文本）"
     case "ppt":
     case "pps":
     case "pot":
@@ -360,20 +360,20 @@ function extractedTextLabel(filePath: string): string {
     case "pptm":
     case "ppsx":
     case "ppsm":
-      return "PowerPoint (extracted text)"
+      return "PowerPoint（已提取文本）"
     case "xls":
     case "xlsx":
     case "xlsm":
     case "xlsb":
-      return "Spreadsheet (extracted text)"
+      return "电子表格（已提取文本）"
     case "odt":
     case "ods":
     case "odp":
-      return "OpenDocument (extracted text)"
+      return "OpenDocument（已提取文本）"
     case "rtf":
-      return "Rich Text Format (extracted text)"
+      return "富文本格式（已提取文本）"
     default:
-      return "Extracted text"
+      return "已提取文本"
   }
 }
 

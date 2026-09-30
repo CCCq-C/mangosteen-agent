@@ -1227,7 +1227,7 @@ describe("ingest-queue — pause/resume processing", () => {
       const pausedTask = getQueue().find((t) => t.sourcePath === "only.md")
       expect(pausedTask?.status).toBe("pending")
       expect(pausedTask?.retryCount).toBe(0)
-      expect(pausedTask?.error).toContain("Paused after provider usage limit")
+      expect(pausedTask?.error).toContain("模型服务额度不足")
       expect(getQueueSummary().paused).toBe(true)
       expect(mockAutoIngest).toHaveBeenCalledTimes(1)
 

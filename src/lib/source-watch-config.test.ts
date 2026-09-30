@@ -14,7 +14,7 @@ describe("source watch config", () => {
   })
   it("uses the shared default fixture", () => {
     expect(DEFAULT_SOURCE_WATCH_CONFIG).toEqual(sourceWatchDefaults)
-    expect(normalizeSourceWatchConfig({}).persistExtractedMarkdown).toBe(false)
+    expect(normalizeSourceWatchConfig({}).persistExtractedMarkdown).toBe(true)
     expect(normalizeSourceWatchConfig({}).parsingConcurrency).toBe(2)
     expect(normalizeSourceWatchConfig({}).ingestConcurrency).toBe(1)
     expect(

@@ -191,7 +191,7 @@ export function computeStructuralLint(
         type: "orphan",
         severity: "info",
         page: page.shortName,
-        detail: "No other pages link to this page.",
+        detail: "没有其他页面链接到此页面。",
         suggestedSource: relatedCandidate(pageIndex, "source")?.shortName,
       })
     }
@@ -200,7 +200,7 @@ export function computeStructuralLint(
         type: "no-outlinks",
         severity: "info",
         page: page.shortName,
-        detail: "This page has no [[wikilink]] references to other pages.",
+        detail: "此页面没有链接到其他知识库页面。",
         suggestedTarget: relatedCandidate(pageIndex, "target")?.shortName,
       })
     }
@@ -211,7 +211,7 @@ export function computeStructuralLint(
         type: "broken-link",
         severity: "warning",
         page: page.shortName,
-        detail: `Broken link: [[${link}]] — target page not found.`,
+        detail: `失效链接：[[${link}]]——找不到目标页面。`,
         brokenTarget: link,
         suggestedTarget: brokenCandidate(link)?.shortName,
       })

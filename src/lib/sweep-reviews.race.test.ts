@@ -55,26 +55,12 @@ function setProject(path: string) {
     } as unknown as ReturnType<typeof useWikiStore.getState>["project"],
   })
   useWikiStore.getState().setLlmConfig({
-    provider: "openai",
-    apiKey: "k",
-    model: "m",
+    provider: "codex-cli",
+    apiKey: "",
+    model: "gpt-5.6-sol",
     ollamaUrl: "",
     customEndpoint: "",
     maxContextSize: 128000,
-  })
-}
-
-/** Clear the API key so the LLM stage short-circuits without a call. */
-function disableLlm() {
-  useWikiStore.setState({
-    llmConfig: {
-      provider: "openai",
-      apiKey: "",
-      model: "",
-      ollamaUrl: "",
-      customEndpoint: "",
-      maxContextSize: 0,
-    },
   })
 }
 
@@ -211,15 +197,19 @@ describe("sweep — rule-based auto-resolution", () => {
     expect(items[0].resolvedAction).toBe("auto-resolved")
   })
 
-  it("does not resolve when the page doesn't exist", async () => {
+  it("does not resolve when Codex finds no match for a missing page", async () => {
     setProject("/project")
-    disableLlm() // prevent stage-2 LLM stage from running
     addPending([{ title: "Missing page: neverwritten", type: "missing-page" }])
 
     mockListDirectory.mockResolvedValue([fileNode("other.md")])
     mockReadFile.mockResolvedValue("")
 
-    const resolved = await sweepResolvedReviews("/project")
+    const sweepPromise = sweepResolvedReviews("/project")
+    await waitUntil(() => harness.pending.length === 1)
+    expect(harness.latest()?.config.provider).toBe("codex-cli")
+    await harness.complete(JSON.stringify({ resolved: [] }))
+
+    const resolved = await sweepPromise
     expect(resolved).toBe(0)
     expect(useReviewStore.getState().items[0].resolved).toBe(false)
   })
@@ -342,23 +332,18 @@ describe("sweep — empty / no-op cases", () => {
     expect(harness.pending).toHaveLength(0)
   })
 
-  it("returns 0 when LLM is not configured", async () => {
+  it("returns 0 when Codex resolves no pending reviews", async () => {
     setProject("/project")
-    useWikiStore.setState({
-      llmConfig: {
-        provider: "openai",
-        apiKey: "",
-        model: "",
-        ollamaUrl: "",
-        customEndpoint: "",
-        maxContextSize: 0,
-      },
-    })
     addPending([{ title: "X", type: "suggestion" }])
 
-    const resolved = await sweepResolvedReviews("/project")
+    const sweepPromise = sweepResolvedReviews("/project")
+    await waitUntil(() => harness.pending.length === 1)
+    expect(harness.latest()?.config.provider).toBe("codex-cli")
+    await harness.complete(JSON.stringify({ resolved: [] }))
+
+    const resolved = await sweepPromise
     expect(resolved).toBe(0)
-    expect(harness.pending).toHaveLength(0)
+    expect(harness.pending).toHaveLength(1)
   })
 })
 

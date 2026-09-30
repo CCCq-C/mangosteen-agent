@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prepare:local-search": "node scripts/prepare-local-search.mjs",
     "typecheck": "tsc --build --pretty",
     "build": "npm run typecheck && vite build",
-    "build:desktop": "npm --prefix mcp-server ci && npm run mcp:build && npm run build",
+    "build:desktop": "npm run prepare:local-search && npm --prefix mcp-server ci && npm run mcp:build && npm run build",
     "preview": "vite preview",
     "test": "npm run test:mocks && npm run test:llm",
     "test:mocks": "vitest run --exclude='**/*.real-llm.test.ts' --exclude='**/mcp-server/**'",

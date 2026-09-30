@@ -205,33 +205,6 @@ export function AboutSection() {
         </label>
       </div>
 
-      <div className="rounded-md border p-4 text-sm">
-        <div className="font-medium">LLM Wiki</div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t("settings.sections.about.appDescription")}
-          {" "}
-          {/*
-           * Tauri 2's webview doesn't honor `target="_blank"` for
-           * external URLs by default — clicking would either do
-           * nothing or replace the in-app webview with the github
-           * page (terrible UX). Route through the opener plugin
-           * via onClick + preventDefault so it always lands in the
-           * system browser.
-           */}
-          <a
-            className="cursor-pointer underline underline-offset-2 hover:text-primary"
-            href="https://github.com/nashsu/llm_wiki"
-            onClick={(e) => {
-              e.preventDefault()
-              void openUrl("https://github.com/nashsu/llm_wiki").catch((err) => {
-                console.error("[about] openUrl failed:", err)
-              })
-            }}
-          >
-            github.com/nashsu/llm_wiki
-          </a>
-        </p>
-      </div>
     </div>
   )
 }
@@ -276,10 +249,10 @@ function UpdateAvailableBanner({
       try {
         await navigator.clipboard.writeText(targetUrl)
         await appDialog.alert({
-          message: `Could not open browser. URL copied to clipboard:\n${targetUrl}`,
+          message: `无法打开浏览器，下载地址已复制到剪贴板：\n${targetUrl}`,
         })
       } catch {
-        await appDialog.alert({ message: `Could not open browser. Visit:\n${targetUrl}` })
+        await appDialog.alert({ message: `无法打开浏览器，请手动访问：\n${targetUrl}` })
       }
     }
   }
@@ -319,12 +292,12 @@ function UpdateAvailableBanner({
  *  in from the caller so the function stays pure and unit-testable. */
 function formatRelative(timestamp: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const delta = Date.now() - timestamp
-  if (delta < 0) return t("time.justNow", { defaultValue: "just now" })
+  if (delta < 0) return t("time.justNow", { defaultValue: "刚刚" })
   const mins = Math.floor(delta / 60_000)
-  if (mins < 1) return t("time.justNow", { defaultValue: "just now" })
-  if (mins < 60) return t("time.minutesAgo", { count: mins, defaultValue: `${mins} min ago` })
+  if (mins < 1) return t("time.justNow", { defaultValue: "刚刚" })
+  if (mins < 60) return t("time.minutesAgo", { count: mins, defaultValue: `${mins} 分钟前` })
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return t("time.hoursAgo", { count: hours, defaultValue: `${hours} h ago` })
+  if (hours < 24) return t("time.hoursAgo", { count: hours, defaultValue: `${hours} 小时前` })
   const days = Math.floor(hours / 24)
-  return t("time.daysAgo", { count: days, defaultValue: `${days} d ago` })
+  return t("time.daysAgo", { count: days, defaultValue: `${days} 天前` })
 }

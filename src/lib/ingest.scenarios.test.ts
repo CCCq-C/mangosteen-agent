@@ -268,7 +268,7 @@ describe("ingest scenarios (fixture-driven)", () => {
     expect(commitCalls).toBe(1)
     expect(cachedWritten).toEqual(firstWritten)
     const activities = useActivityStore.getState().items
-    expect(activities.some((item) => item.detail.includes("Skipped (unchanged)"))).toBe(true)
+    expect(activities.some((item) => item.detail.includes("资料没有变化"))).toBe(true)
   })
 
   it("serializes concurrent ingestion of the same source and reuses its cache", async () => {
@@ -284,7 +284,7 @@ describe("ingest scenarios (fixture-driven)", () => {
     expect(streamCallCount).toBe(2)
     expect(secondWritten).toEqual(firstWritten)
     const activities = useActivityStore.getState().items
-    expect(activities.some((item) => item.detail.includes("Skipped (unchanged)"))).toBe(true)
+    expect(activities.some((item) => item.detail.includes("资料没有变化"))).toBe(true)
   })
 
   it("drops generated pages whose frontmatter type disagrees with schema routing", async () => {
@@ -514,14 +514,14 @@ describe("ingest scenarios (fixture-driven)", () => {
         useWikiStore.getState().llmConfig,
         controller.signal,
       ),
-    ).rejects.toThrow(/Ingest cancelled/)
+    ).rejects.toThrow(/资料整理已取消/)
 
     expect(await fileExists(`${projectPath}/wiki/concepts/partial.md`)).toBe(false)
     expect(await fileExists(`${projectPath}/wiki/sources/cancel.md`)).toBe(false)
     expect(useReviewStore.getState().items).toHaveLength(0)
     expect(useActivityStore.getState().items[0]).toMatchObject({
       status: "error",
-      detail: "Ingest cancelled",
+      detail: "资料整理已取消",
     })
   })
 })

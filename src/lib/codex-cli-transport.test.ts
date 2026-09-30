@@ -41,7 +41,7 @@ vi.mock("./claude-cli-transport", () => ({
   streamClaudeCodeCli: transportMocks.streamClaudeCodeCli,
 }))
 
-import { buildPrompt, parseCodexCliLine, streamCodexCli } from "./codex-cli-transport"
+import { buildPrompt, collectCodexCliImages, parseCodexCliLine, streamCodexCli } from "./codex-cli-transport"
 import * as llmClient from "./llm-client"
 import { streamChat } from "./llm-client"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -111,6 +111,22 @@ describe("buildPrompt", () => {
   })
 })
 
+describe("collectCodexCliImages", () => {
+  it("keeps image data while replacing it with a prompt marker", () => {
+    const result = collectCodexCliImages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Describe this chart" },
+          { type: "image", mediaType: "image/png", dataBase64: "cG5n" },
+        ],
+      },
+    ])
+
+    expect(result.images).toEqual([{ mediaType: "image/png", dataBase64: "cG5n" }])
+    expect(buildPrompt(result.messages)).toContain("[Image attached]")
+  })
+})
 
 describe("streamCodexCli", () => {
   it("does not expose an alternate HTTP transport", () => {

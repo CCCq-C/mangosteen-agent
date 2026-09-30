@@ -243,23 +243,23 @@ export function ActivityPanel() {
   let statusText = ""
   if (queueSummary.processing > 0 || queueSummary.pending > 0) {
     const done = queueSummary.completed + queueSummary.failed + queueSummary.cancelled
-    statusText = `Queue: ${done}/${queueSummary.total}`
-    if (queueSummary.failed > 0) statusText += ` (${queueSummary.failed} failed)`
+    statusText = `队列：${done}/${queueSummary.total}`
+    if (queueSummary.failed > 0) statusText += `（${queueSummary.failed} 个失败）`
   } else if (runningCount > 0) {
-    statusText = `Processing: ${latestItem?.title ?? "..."}`
+    statusText = `处理中：${latestItem?.title ?? "..."}`
   } else if (queueSummary.failed > 0 || queueSummary.cancelled > 0) {
     statusText = t("activity.stoppedCount", {
       failed: queueSummary.failed,
       cancelled: queueSummary.cancelled,
     })
   } else if (fileSyncProcessing > 0 || fileSyncPending > 0) {
-    statusText = `File sync: ${fileSyncProcessing + fileSyncPending} pending`
+    statusText = `文件同步：${fileSyncProcessing + fileSyncPending} 个待处理`
   } else if (fileSyncFailed > 0) {
-    statusText = `File sync: ${fileSyncFailed} failed`
+    statusText = `文件同步：${fileSyncFailed} 个失败`
   } else if (fileSyncError) {
-    statusText = "File sync failed"
+    statusText = "文件同步失败"
   } else {
-    statusText = `Done: ${latestItem?.title ?? "All tasks complete"}`
+    statusText = `完成：${latestItem?.title ?? "全部任务已完成"}`
   }
 
   const isActive = runningCount > 0 || queueSummary.processing > 0 || queueSummary.pending > 0 || fileSyncProcessing > 0 || fileSyncPending > 0

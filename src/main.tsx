@@ -33,8 +33,8 @@ async function initApp() {
       const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
       root.innerHTML = `
         <div style="font-family: system-ui, sans-serif; padding: 24px; color: #111; color: light-dark(#111, #f5f5f5); background: #fff; background: light-dark(#fff, #111); min-height: 100vh; color-scheme: light dark;">
-          <h1 style="font-size: 18px; margin: 0 0 12px;">LLM Wiki failed to start</h1>
-          <p style="margin: 0 0 12px;">The frontend startup code threw an error before React could render.</p>
+          <h1 style="font-size: 18px; margin: 0 0 12px;">山竹智能体启动失败</h1>
+          <p style="margin: 0 0 12px;">界面程序在启动时遇到错误，暂时无法显示。</p>
           <pre style="white-space: pre-wrap; border: 1px solid light-dark(#ddd, #333); border-radius: 8px; padding: 12px; background: light-dark(#f7f7f7, #1d1d1d);">${message.replace(/[&<>"']/g, (ch) => ({
             "&": "&amp;",
             "<": "&lt;",

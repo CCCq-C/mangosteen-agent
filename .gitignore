@@ -12,6 +12,9 @@ dist-rc/
 
 # Rust build artifacts
 src-tauri/target/
+# Build-time SearXNG runtime. It is fetched from the pinned open-source
+# release by `npm run prepare:local-search`, then included in Windows bundles.
+src-tauri/local-search-runtime/
 
 # Tauri generated files
 src-tauri/gen/

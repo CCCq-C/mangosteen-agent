@@ -14,7 +14,6 @@ import { supportsImageInput } from "@/lib/llm-providers"
 import { executeIngestWrites } from "@/lib/ingest"
 import { deleteFile, openPathInProject, readFile } from "@/commands/fs"
 import { getFileName, isAbsolutePath, normalizePath } from "@/lib/path-utils"
-import { hasConfiguredAnyTxt } from "@/lib/anytxt-search"
 import type { ChatAgentEvent, ChatAgentFileChange, ChatAgentStep, ChatUserInputRequest } from "@/lib/chat-agent-types"
 import type { ChatMessage as LlmChatMessage, ContentBlock } from "@/lib/llm-client"
 import { FilePreview } from "@/components/editor/file-preview"
@@ -25,6 +24,9 @@ import { getFileCategory, getFileExtension, isTextReadable } from "@/lib/file-ty
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { summarizeAgentFileChange } from "@/lib/agent-file-activity"
 import { ReferenceKnowledgeGraph } from "@/components/chat/reference-knowledge-graph"
+import { importSourceFiles, sourceImportPathsFromMessage } from "@/lib/source-lifecycle"
+import { buildSourceImportFeedback } from "@/lib/source-import-feedback"
+import { hasBackendDisplayableOutcome, shouldUseBackendAgentStream } from "@/lib/chat-stream-status"
 
 type InternalChatSendOptions = ChatSendOptions & {
   suppressUserMessage?: boolean
@@ -86,7 +88,7 @@ interface AvailableAgentSkill {
   source: string
 }
 
-type ContextDetailCategory = "wiki" | "graph" | "web" | "anytxt" | "workspace" | "external"
+type ContextDetailCategory = "wiki" | "graph" | "web" | "workspace" | "external"
 
 interface ContextDetailItem extends MessageReference {
   content: string
@@ -97,7 +99,6 @@ interface ContextDetailItem extends MessageReference {
 function contextDetailCategory(reference: MessageReference): ContextDetailCategory {
   const source = reference.source?.trim().toLowerCase()
   if (source === "graph") return "graph"
-  if (source === "anytxt") return "anytxt"
   if (source === "web") return "web"
   if (reference.kind === "workspace") return "workspace"
   if (reference.kind === "wiki") return "wiki"
@@ -109,6 +110,7 @@ export let lastQueryPages: { title: string; path: string }[] = []
 
 const AGENT_STREAM_IDLE_TIMEOUT_MS = 8 * 60 * 1000
 const AGENT_SKILL_STREAM_IDLE_TIMEOUT_MS = 15 * 60 * 1000
+const CODEX_CLI_COMPLETION_BUFFER_MS = 60 * 1000
 const MAX_AGENT_ACTIVITY_SNAPSHOT_CHARS = 512_000
 
 async function readAgentActivitySnapshot(path: string): Promise<string | null> {
@@ -147,10 +149,18 @@ function commonDirectory(paths: string[]): string | null {
   return firstParts.slice(0, commonLength).join("/") || null
 }
 
-function agentStreamIdleTimeoutMs(options: ChatSendOptions, skillCount: number): number {
-  return skillCount > 0 || options.agentMode === "deep"
+export function agentStreamIdleTimeoutMs(
+  options: ChatSendOptions,
+  skillCount: number,
+  codexCliTimeoutMinutes?: number,
+): number {
+  const standardTimeout = skillCount > 0 || options.agentMode === "deep"
     ? AGENT_SKILL_STREAM_IDLE_TIMEOUT_MS
     : AGENT_STREAM_IDLE_TIMEOUT_MS
+  if (codexCliTimeoutMinutes === undefined) return standardTimeout
+  const codexTimeout = Math.max(1, Math.min(240, Math.floor(codexCliTimeoutMinutes))) * 60 * 1000
+    + CODEX_CLI_COMPLETION_BUFFER_MS
+  return Math.max(standardTimeout, codexTimeout)
 }
 
 function formatDate(timestamp: number): string {
@@ -278,7 +288,6 @@ function backendReferenceToMessageReference(ref: BackendAgentReference): Message
   const isWorkspace = ref.kind === "workspace" || ref.path.startsWith("agent-workspace/")
   const source =
     isWorkspace ? "Workspace"
-      : ref.kind === "anytxt" ? "AnyTXT"
       : ref.kind === "web" ? "Web"
         : ref.kind === "source" ? "Source"
           : ref.kind === "graph" ? "Graph"
@@ -359,7 +368,6 @@ function normalizeBackendToolName(tool: string) {
   if (normalized === "source_search") return "project_file_read" as const
   if (normalized === "graph_search") return "graph_search" as const
   if (normalized === "web_search") return "web_search" as const
-  if (normalized === "anytxt_search") return "anytxt_search" as const
   if (normalized === "shell_exec") return "shell_exec" as const
   if (normalized === "deep_research_run") return "project_file_read" as const
   return "unknown_tool" as const
@@ -387,8 +395,7 @@ function backendToolToAgentEvent(event: BackendAgentToolEvent): ChatAgentEvent {
   const tool = normalizeBackendToolName(event.tool)
   const stage =
     tool === "web_search" ? "searching_web"
-      : tool === "anytxt_search" ? "searching_anytxt"
-        : tool === "graph_search" ? "searching_graph"
+      : tool === "graph_search" ? "searching_graph"
           : tool === "project_file_read" ? "reading_context"
             : tool === "wiki_search" ? "searching_wiki"
               : event.status === "started" ? "tool_call"
@@ -461,14 +468,11 @@ export function ChatPanel() {
   const removeLastAssistantMessage = useChatStore((s) => s.removeLastAssistantMessage)
   const maxHistoryMessages = useChatStore((s) => s.maxHistoryMessages)
   const useWebSearch = useChatStore((s) => s.useWebSearch)
-  const useAnyTxtSearch = useChatStore((s) => s.useAnyTxtSearch)
   const agentMode = useChatStore((s) => s.agentMode)
   const retrievalMode = useChatStore((s) => s.retrievalMode)
   const selectedSkills = useChatStore((s) => s.selectedSkills)
   const selectedContextFiles = useChatStore((s) => s.selectedContextFiles)
   const disabledSkills = useChatStore((s) => s.disabledSkills)
-  const setUseWebSearch = useChatStore((s) => s.setUseWebSearch)
-  const setUseAnyTxtSearch = useChatStore((s) => s.setUseAnyTxtSearch)
   const setAgentMode = useChatStore((s) => s.setAgentMode)
   const setRetrievalMode = useChatStore((s) => s.setRetrievalMode)
   const setSelectedSkills = useChatStore((s) => s.setSelectedSkills)
@@ -491,8 +495,6 @@ export function ChatPanel() {
     () => resolveTaskLlmConfig("chat", baseLlmConfig, providerConfigs, taskModelRouting, projectLlmOverride, customLlmPresets),
     [baseLlmConfig, providerConfigs, taskModelRouting, projectLlmOverride, customLlmPresets],
   )
-  const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
-  const anyTxtAvailable = hasConfiguredAnyTxt(searchApiConfig.anyTxt)
   const imageInputAvailable = supportsImageInput(llmConfig)
   const availableContextFiles = useMemo(() => {
     if (!project) return []
@@ -725,7 +727,6 @@ export function ChatPanel() {
     ) => {
       const sendOptions = options ?? {
         useWebSearch: useChatStore.getState().useWebSearch,
-        useAnyTxtSearch: useChatStore.getState().useAnyTxtSearch,
         agentMode: useChatStore.getState().agentMode,
         retrievalMode: useChatStore.getState().retrievalMode,
         skills: useChatStore.getState().selectedSkills,
@@ -768,9 +769,46 @@ export function ChatPanel() {
         activeRunIdRef.current = backendRunId
         const isCurrentRun = () => runIdRef.current === runId && !controller.signal.aborted
 
-        const useBackendAgent =
-          llmConfig.provider !== "claude-code" &&
-          llmConfig.provider !== "codex-cli"
+        const sourceImportPaths = sendOptions.suppressUserMessage
+          ? []
+          : sourceImportPathsFromMessage(text)
+        if (project && sourceImportPaths.length > 0) {
+          setAgentEvents([{
+            stage: "writing",
+            status: "running",
+            message: "收到文件啦，正在保存到知识库…",
+          }])
+          const result = await importSourceFiles(
+            project,
+            sourceImportPaths,
+            llmConfig,
+            useWikiStore.getState().sourceWatchConfig,
+          )
+          await refreshProjectFileTree(project.path, { bumpDataVersion: true })
+          if (!isCurrentRun()) return
+
+          const feedback = buildSourceImportFeedback(result)
+          const importStep: ChatAgentStep = {
+            id: `source-import-${Date.now()}`,
+            type: "tool_result",
+            tool: "project_files",
+            message: result.imported.length > 0
+              ? `${result.imported.length} 个文件已保存到资料库`
+              : "文件导入失败",
+            status: feedback.success ? "success" : "error",
+            timestamp: Date.now(),
+          }
+          finalized = true
+          finalizeStreamForConversation(convId, feedback.message, [], [importStep])
+          setAgentEvents([])
+          setStreamingConversationId(null)
+          abortRef.current = null
+          activeRunSessionIdRef.current = null
+          activeRunIdRef.current = null
+          return
+        }
+
+        const useBackendAgent = shouldUseBackendAgentStream(llmConfig.provider)
 
         if (useBackendAgent) {
           setAgentEvents([
@@ -807,7 +845,11 @@ export function ChatPanel() {
             rejectStream = reject
           })
           void streamDone.catch(() => {})
-          const streamIdleTimeoutMs = agentStreamIdleTimeoutMs(sendOptions, requestSkills.length)
+          const streamIdleTimeoutMs = agentStreamIdleTimeoutMs(
+            sendOptions,
+            requestSkills.length,
+            llmConfig.codexCliTimeoutMinutes ?? 10,
+          )
           let timeout: number | undefined
           const clearStreamTimeout = () => {
             if (timeout !== undefined) {
@@ -820,7 +862,7 @@ export function ChatPanel() {
             timeout = window.setTimeout(() => {
               if (!streamFinished) {
                 streamFinished = true
-                rejectStream?.(new Error("Agent stream timed out"))
+                rejectStream?.(new Error("智能体响应超时"))
               }
             }, streamIdleTimeoutMs)
           }
@@ -937,7 +979,7 @@ export function ChatPanel() {
               pendingUserInputRequest = agentEvent.request
               if (!accumulated.trim()) {
                 const intro = agentEvent.request.description
-                  || t("chat.userInputRequiredDescription", { defaultValue: "Please provide the requested information to continue." })
+                  || t("chat.userInputRequiredDescription", { defaultValue: "请提供所需信息以继续。" })
                 accumulated = intro
                 appendStreamToken(intro)
               }
@@ -997,7 +1039,6 @@ export function ChatPanel() {
                 tools: {
                   wiki: true,
                   web: sendOptions.useWebSearch,
-                  anytxt: sendOptions.useAnyTxtSearch,
                 },
                 topK: sendOptions.agentMode === "deep" ? 8 : 5,
                 includeContent: sendOptions.agentMode === "deep",
@@ -1028,10 +1069,14 @@ export function ChatPanel() {
             .filter((ref) => ref.kind === "wiki")
             .map((ref) => ({ title: ref.title, path: ref.path }))
           const steps = backendEvents.map(backendToolToAgentStep)
+          const finalText = accumulated.trim()
+          if (!hasBackendDisplayableOutcome(finalText, fileEditChanges.length)) {
+            throw new Error("Codex 已完成任务，但没有返回可显示的答案")
+          }
           finalized = true
           finalizeStreamForConversation(
             convId,
-            accumulated,
+            finalText,
             references,
             steps,
             pendingUserInputRequest,
@@ -1075,7 +1120,6 @@ export function ChatPanel() {
             tools: {
               wiki: true,
               web: sendOptions.useWebSearch,
-              anytxt: sendOptions.useAnyTxtSearch,
             },
             topK: sendOptions.agentMode === "deep" ? 8 : 5,
             includeContent: sendOptions.agentMode === "deep",
@@ -1108,7 +1152,7 @@ export function ChatPanel() {
             convId,
             backendResponse.message
               ? backendResponseText(backendResponse)
-              : (backendResponse.userInputRequest.description ?? t("chat.userInputRequiredDescription", { defaultValue: "Please provide the requested information to continue." })),
+              : (backendResponse.userInputRequest.description ?? t("chat.userInputRequiredDescription", { defaultValue: "请提供所需信息以继续。" })),
             backendReferences,
             backendSteps,
             backendResponse.userInputRequest,
@@ -1242,7 +1286,7 @@ export function ChatPanel() {
         activeRunIdRef.current = null
       }
     },
-    [project, llmConfig, searchApiConfig, addMessageToConversation, setStreaming, appendStreamToken, finalizeStreamForConversation, createConversation, maxHistoryMessages, t, availableSkills, autoOpenSingleGeneratedOutput],
+    [project, llmConfig, addMessageToConversation, setStreaming, appendStreamToken, finalizeStreamForConversation, createConversation, maxHistoryMessages, t, availableSkills, autoOpenSingleGeneratedOutput],
   )
 
   const handleStop = useCallback(() => {
@@ -1352,7 +1396,6 @@ export function ChatPanel() {
     try {
       await handleSend(resumeMessage, priorUser.images ?? [], {
         useWebSearch: useChatStore.getState().useWebSearch,
-        useAnyTxtSearch: useChatStore.getState().useAnyTxtSearch,
         agentMode: useChatStore.getState().agentMode,
         retrievalMode: useChatStore.getState().retrievalMode,
         skills: useChatStore.getState().selectedSkills,
@@ -1384,7 +1427,6 @@ export function ChatPanel() {
     ].join("\n")
     handleSend(resumeMessage, [], {
       useWebSearch: useChatStore.getState().useWebSearch,
-      useAnyTxtSearch: useChatStore.getState().useAnyTxtSearch,
       agentMode: useChatStore.getState().agentMode,
       retrievalMode: useChatStore.getState().retrievalMode,
       skills: useChatStore.getState().selectedSkills,
@@ -1478,20 +1520,16 @@ export function ChatPanel() {
           onStop={handleStop}
           isStreaming={activeStreaming}
           useWebSearch={useWebSearch}
-          useAnyTxtSearch={useAnyTxtSearch}
           agentMode={agentMode}
           retrievalMode={retrievalMode}
           availableSkills={availableSkills}
           selectedSkills={selectedSkills}
           availableContextFiles={availableContextFiles}
           selectedContextFiles={selectedContextFiles}
-          onUseWebSearchChange={setUseWebSearch}
-          onUseAnyTxtSearchChange={setUseAnyTxtSearch}
           onAgentModeChange={setAgentMode}
           onRetrievalModeChange={setRetrievalMode}
           onSelectedSkillsChange={setSelectedSkills}
           onSelectedContextFilesChange={setSelectedContextFiles}
-          anyTxtAvailable={anyTxtAvailable}
           imageInputAvailable={imageInputAvailable}
           placeholder={
             mode === "ingest"
@@ -1563,8 +1601,8 @@ function GeneratedOutputsPanel({
             type="button"
             onClick={onOpenDirectory}
             className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            title={t("chat.openGeneratedOutputFolder", { defaultValue: "Open output folder" })}
-            aria-label={t("chat.openGeneratedOutputFolder", { defaultValue: "Open output folder" })}
+            title={t("chat.openGeneratedOutputFolder", { defaultValue: "打开输出目录" })}
+            aria-label={t("chat.openGeneratedOutputFolder", { defaultValue: "打开输出目录" })}
           >
             <FolderOpen className="h-3.5 w-3.5" />
           </button>
@@ -1849,11 +1887,10 @@ function ContextDetailsPanel({
       wiki: t("chat.contextCategoryWiki"),
       graph: t("chat.contextCategoryGraph"),
       web: t("chat.contextCategoryWeb"),
-      anytxt: t("chat.contextCategoryAnyTxt"),
       workspace: t("chat.contextCategoryWorkspace"),
       external: t("chat.contextCategoryExternal"),
     }
-    const order: ContextDetailCategory[] = ["wiki", "graph", "web", "anytxt", "workspace", "external"]
+    const order: ContextDetailCategory[] = ["wiki", "graph", "web", "workspace", "external"]
     return order.flatMap((category) => {
       const group = result.get(category)
       return group ? [[category, labels[category], group] as const] : []

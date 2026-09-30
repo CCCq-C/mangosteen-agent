@@ -134,8 +134,8 @@ export function AppLayout({ onSwitchProject }: AppLayoutProps) {
                 type="button"
                 onClick={toggleLeftPanel}
                 className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                title={t("layout.showSidebar", "Show sidebar")}
-                aria-label={t("layout.showSidebar", "Show sidebar")}
+                title={t("layout.showSidebar", "显示侧边栏")}
+                aria-label={t("layout.showSidebar", "显示侧边栏")}
               >
                 <PanelLeftOpen className="h-4 w-4" />
               </button>

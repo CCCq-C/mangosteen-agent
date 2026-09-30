@@ -33,7 +33,6 @@ struct AgentRuntimeConfig {
     embedding: Option<commands::search::SearchEmbeddingConfig>,
     llm: Option<agent::provider::LlmConfig>,
     web_search: Option<agent::tools::WebSearchConfig>,
-    anytxt: Option<agent::tools::AnyTxtConfig>,
 }
 
 #[tauri::command]
@@ -110,7 +109,6 @@ async fn agent_start_turn(
         runtime_config.embedding,
         runtime_config.llm,
         runtime_config.web_search,
-        runtime_config.anytxt,
     );
     let user_message = request.message.clone();
     let persist_session = request.persist_session;
@@ -196,7 +194,6 @@ async fn agent_start_turn_stream(
         runtime_config.embedding,
         runtime_config.llm,
         runtime_config.web_search,
-        runtime_config.anytxt,
     );
     let app_for_task = app.clone();
     let project_for_task = project.clone();
@@ -323,7 +320,7 @@ fn mcp_server_entry_path(app: tauri::AppHandle) -> Result<String, String> {
             }
         }
 
-        Err("MCP server entry was not found. Run `npm run mcp:build` from the LLM Wiki repository, then reopen Settings.".to_string())
+        Err("未找到 MCP 服务入口。请在山竹智能体源码目录中运行 `npm run mcp:build`，然后重新打开设置。".to_string())
     })
 }
 
@@ -340,7 +337,7 @@ fn resolve_agent_project(
                 || project_path_matches(&project.path, &decoded)
                 || (wants_current && project.current)
         })
-        .ok_or_else(|| format!("Unknown project: {decoded}"))
+        .ok_or_else(|| format!("找不到项目：{decoded}"))
 }
 
 fn load_agent_projects(app: &tauri::AppHandle) -> Vec<AgentProjectEntry> {
@@ -423,11 +420,6 @@ fn load_agent_runtime_config(app: &tauri::AppHandle) -> AgentRuntimeConfig {
             .and_then(|value| serde_json::from_value(value).ok()),
         web_search: parsed
             .get("searchApiConfig")
-            .cloned()
-            .and_then(|value| serde_json::from_value(value).ok()),
-        anytxt: parsed
-            .get("searchApiConfig")
-            .and_then(|value| value.get("anyTxt"))
             .cloned()
             .and_then(|value| serde_json::from_value(value).ok()),
     }
@@ -520,7 +512,7 @@ fn set_close_behavior(
 ) -> Result<String, String> {
     let normalized = match value.as_str() {
         "ask" | "minimize" | "exit" => value,
-        other => return Err(format!("Invalid close behavior: {other}")),
+        other => return Err(format!("无效的关闭行为：{other}")),
     };
     let mut guard = state
         .0
@@ -536,7 +528,7 @@ fn close_behavior<R: tauri::Runtime>(window: &tauri::Window<R>) -> String {
         .0
         .lock()
         .map(|value| value.clone())
-        .unwrap_or_else(|_| "minimize".to_string())
+        .unwrap_or_else(|_| "exit".to_string())
 }
 
 fn tray_available<R: tauri::Runtime>(window: &tauri::Window<R>) -> bool {
@@ -595,10 +587,16 @@ pub fn run() {
             // drained on process exit or by claude_cli_kill.
             app.manage(commands::claude_cli::ClaudeCliState::default());
             app.manage(commands::codex_cli::CodexCliState::default());
+            app.manage(commands::local_search::LocalSearchState::default());
             app.manage(commands::file_sync::FileSyncState::default());
             app.manage(agent::session::AgentSessionStore::default());
             app.manage(agent::cancel::AgentCancellationRegistry::default());
-            app.manage(CloseBehaviorState(Mutex::new("minimize".to_string())));
+            match commands::local_search::adopt_local_search_default(app.handle()) {
+                Ok(true) => eprintln!("[local-search] upgraded untouched legacy search settings"),
+                Ok(false) => {}
+                Err(err) => eprintln!("[local-search] could not upgrade settings: {err}"),
+            }
+            app.manage(CloseBehaviorState(Mutex::new("exit".to_string())));
             app.manage(TrayAvailabilityState(Mutex::new(false)));
             // Start the API before optional desktop integrations so the
             // backend is reachable if tray setup or another integration fails.
@@ -658,7 +656,9 @@ pub fn run() {
             commands::search::embedding_fetch_batch,
             commands::search::get_page_links,
             commands::external_search::web_search,
-            commands::external_search::anytxt_search,
+            commands::local_search::ensure_local_search,
+            commands::local_search::local_search_status,
+            commands::local_search::restart_local_search,
             clip_server_status,
             api_server_status,
             api_server_reload_config,
@@ -668,6 +668,12 @@ pub fn run() {
             agent_get_session,
             agent_list_sessions,
             agent::skills::agent_list_skills,
+            commands::skillhub::skillhub_search,
+            commands::skillhub::skillhub_install,
+            commands::skillhub::skillhub_recommended,
+            commands::modelscope::modelscope_search,
+            commands::modelscope::modelscope_install,
+            commands::modelscope::modelscope_recommended,
             mcp_server_entry_path,
             commands::vectorstore::vector_upsert,
             commands::vectorstore::vector_search,
@@ -726,12 +732,12 @@ pub fn run() {
                             let confirmed = app
                                 .dialog()
                                 .message(
-                                    "Quit LLM Wiki? Choose Quit to exit. Choose Hide Window to keep background features running.",
+                                    "要退出山竹智能体吗？选择“退出”将完全关闭应用；选择“隐藏窗口”可让后台功能继续运行。",
                                 )
-                                .title("LLM Wiki")
+                                .title("山竹智能体")
                                 .buttons(MessageDialogButtons::OkCancelCustom(
-                                    "Quit".to_string(),
-                                    "Hide Window".to_string(),
+                                    "退出".to_string(),
+                                    "隐藏窗口".to_string(),
                                 ))
                                 .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
                                 .blocking_show();
@@ -750,6 +756,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            if matches!(&event, tauri::RunEvent::Exit) {
+                commands::local_search::stop_local_search_inner(
+                    &app.state::<commands::local_search::LocalSearchState>(),
+                );
+            }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
                 has_visible_windows,

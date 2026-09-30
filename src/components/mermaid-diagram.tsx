@@ -226,7 +226,7 @@ function summarizeMermaidError(error: string): string {
     .split("\n")
     .map((line) => line.trim())
     .find((line) => line && !/^error:/i.test(line))
-  return firstUsefulLine || "Check the diagram syntax in the Mermaid code block."
+  return firstUsefulLine || "请检查 Mermaid 代码块中的图表语法。"
 }
 
 export function unwrapMermaidPre(children: ReactNode): ReactNode | null {

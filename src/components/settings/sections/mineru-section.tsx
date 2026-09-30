@@ -40,19 +40,19 @@ export function MineruSection({ draft, setDraft }: Props) {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">
-          {t("settings.sections.mineru.title", { defaultValue: "MinerU PDF Parser" })}
+          {t("settings.sections.mineru.title", { defaultValue: "MinerU PDF 解析" })}
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           {t("settings.sections.mineru.description", {
             defaultValue:
-              "Use MinerU cloud or a self-hosted local service for higher quality PDF parsing (tables, formulas, complex layouts).",
+              "使用 MinerU 云服务或自行部署的本地服务，提高表格、公式和复杂排版 PDF 的解析质量。",
           })}
         </p>
         {draft.mineruBackend === "cloud" && (
           <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
             {t("settings.sections.mineru.privacyNotice", {
               defaultValue:
-                "When enabled, PDF contents are uploaded to MinerU cloud for parsing. Do not enable this for sensitive documents unless you accept that.",
+                "开启后，PDF 内容会上传到 MinerU 云端解析。敏感文档请谨慎使用。",
             })}
           </p>
         )}
@@ -66,14 +66,14 @@ export function MineruSection({ draft, setDraft }: Props) {
           className="h-4 w-4"
         />
         <span className="text-sm">
-          {t("settings.sections.mineru.enabled", { defaultValue: "Enable MinerU" })}
+          {t("settings.sections.mineru.enabled", { defaultValue: "启用 MinerU" })}
         </span>
       </label>
 
       {draft.mineruEnabled && (
         <div className="space-y-4 pl-1">
           <div className="space-y-2">
-            <Label>{t("settings.sections.mineru.backend", { defaultValue: "Backend" })}</Label>
+            <Label>{t("settings.sections.mineru.backend", { defaultValue: "解析服务" })}</Label>
             <div className="space-y-1 pl-1">
               <label className="flex items-center gap-2">
                 <input
@@ -87,7 +87,7 @@ export function MineruSection({ draft, setDraft }: Props) {
                 />
                 <span className="text-sm">
                   {t("settings.sections.mineru.cloudBackend", {
-                    defaultValue: "Cloud (mineru.net) - requires token, higher quality",
+                    defaultValue: "云端（mineru.net）——需要访问令牌，解析质量更高",
                   })}
                 </span>
               </label>
@@ -103,7 +103,7 @@ export function MineruSection({ draft, setDraft }: Props) {
                 />
                 <span className="text-sm">
                   {t("settings.sections.mineru.localBackend", {
-                    defaultValue: "Official self-hosted mineru-api - private, offline",
+                    defaultValue: "官方自建 mineru-api——私有、离线",
                   })}
                 </span>
               </label>
@@ -113,7 +113,7 @@ export function MineruSection({ draft, setDraft }: Props) {
           {draft.mineruBackend === "cloud" && (
             <div className="space-y-2">
               <Label htmlFor="mineru-token">
-                {t("settings.sections.mineru.token", { defaultValue: "API Token" })}
+                {t("settings.sections.mineru.token", { defaultValue: "API 访问令牌" })}
               </Label>
               <Input
                 id="mineru-token"
@@ -124,7 +124,7 @@ export function MineruSection({ draft, setDraft }: Props) {
                   setTestState("idle")
                 }}
                 placeholder={t("settings.sections.mineru.tokenHint", {
-                  defaultValue: "Get your token from mineru.net",
+                  defaultValue: "从 mineru.net 获取访问令牌",
                 })}
               />
             </div>
@@ -135,7 +135,7 @@ export function MineruSection({ draft, setDraft }: Props) {
               <div className="space-y-2">
                 <Label htmlFor="mineru-local-endpoint">
                   {t("settings.sections.mineru.localEndpoint", {
-                    defaultValue: "Local service endpoint",
+                    defaultValue: "本地服务地址",
                   })}
                 </Label>
                 <Input
@@ -151,14 +151,14 @@ export function MineruSection({ draft, setDraft }: Props) {
                 <p className="text-xs text-muted-foreground">
                   {t("settings.sections.mineru.localInfo", {
                     defaultValue:
-                      "Base URL of an official mineru-api or mineru-router service.",
+                      "官方 mineru-api 或 mineru-router 服务的基础地址。",
                   })}
                 </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="mineru-local-token">
                   {t("settings.sections.mineru.localToken", {
-                    defaultValue: "Local API key (optional)",
+                    defaultValue: "本地 API 密钥（可选）",
                   })}
                 </Label>
                 <Input
@@ -170,7 +170,7 @@ export function MineruSection({ draft, setDraft }: Props) {
                     setTestState("idle")
                   }}
                   placeholder={t("settings.sections.mineru.localTokenHint", {
-                    defaultValue: "Sent as an Authorization: Bearer header",
+                    defaultValue: "通过 Authorization: Bearer 请求头发送",
                   })}
                 />
               </div>
@@ -179,7 +179,7 @@ export function MineruSection({ draft, setDraft }: Props) {
 
           {draft.mineruBackend === "cloud" && <div className="space-y-2">
             <Label htmlFor="mineru-model">
-              {t("settings.sections.mineru.model", { defaultValue: "Model Version" })}
+              {t("settings.sections.mineru.model", { defaultValue: "模型版本" })}
             </Label>
             <select
               id="mineru-model"
@@ -191,18 +191,18 @@ export function MineruSection({ draft, setDraft }: Props) {
             >
               <option value="vlm">
                 {t("settings.sections.mineru.modelVlm", {
-                  defaultValue: "VLM (Recommended, best for complex layouts)",
+                  defaultValue: "VLM（推荐，适合复杂排版）",
                 })}
               </option>
               <option value="pipeline">
                 {t("settings.sections.mineru.modelPipeline", {
-                  defaultValue: "Pipeline (Faster)",
+                  defaultValue: "Pipeline（更快）",
                 })}
               </option>
             </select>
             <p className="text-xs text-muted-foreground">
               {t("settings.sections.mineru.modelHint", {
-                defaultValue: "PDF parsing supports pipeline and vlm. MinerU-HTML is for HTML files and is not used here.",
+                defaultValue: "PDF 解析支持 Pipeline 和 VLM。MinerU-HTML 用于 HTML 文件，这里不会使用。",
               })}
             </p>
           </div>}
@@ -270,7 +270,7 @@ export function MineruSection({ draft, setDraft }: Props) {
             <p className="rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
               {t("settings.sections.mineru.testQuotaNotice", {
                 defaultValue:
-                  "Connection test submits a small demo file to MinerU and may consume a small amount of quota.",
+                  "连接测试会向 MinerU 提交一个小型示例文件，可能消耗少量额度。",
               })}
             </p>
           )}
@@ -287,22 +287,22 @@ export function MineruSection({ draft, setDraft }: Props) {
               }
             >
               {testState === "running"
-                ? t("settings.sections.mineru.testing", { defaultValue: "Testing..." })
+                ? t("settings.sections.mineru.testing", { defaultValue: "测试中……" })
                 : t("settings.sections.mineru.test", {
-                    defaultValue: "Test Connection",
+                    defaultValue: "测试连接",
                   })}
             </Button>
             {testState === "success" && (
               <span className="text-sm text-green-600">
                 {t("settings.sections.mineru.testSuccess", {
-                  defaultValue: "Connection successful",
+                  defaultValue: "连接成功",
                 })}
               </span>
             )}
             {testState === "failed" && (
               <span className="text-sm text-red-600">
                 {t("settings.sections.mineru.testFailed", {
-                  defaultValue: "Test failed",
+                  defaultValue: "测试失败",
                 })}
                 : {testError}
               </span>

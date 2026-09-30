@@ -50,7 +50,6 @@ interface PersistedChatData {
 
 export interface ChatPreferences {
   useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   selectedSkills: string[]
@@ -154,7 +153,7 @@ export async function loadChatHistory(projectPath: string): Promise<PersistedCha
         const legacyMessages = parsed as DisplayMessage[]
         const defaultConv: Conversation = {
           id: "default",
-          title: "Previous Conversations",
+          title: "历史对话",
           createdAt: legacyMessages[0]?.timestamp ?? Date.now(),
           updatedAt: legacyMessages[legacyMessages.length - 1]?.timestamp ?? Date.now(),
         }
@@ -256,8 +255,7 @@ export async function loadChatPreferences(projectPath: string): Promise<ChatPref
     const content = await readFile(`${pp}/.llm-wiki/chat-preferences.json`)
     const parsed = JSON.parse(content) as Partial<ChatPreferences>
     return {
-      useWebSearch: parsed.useWebSearch === true,
-      useAnyTxtSearch: parsed.useAnyTxtSearch === true,
+      useWebSearch: true,
       agentMode: normalizePersistedAgentMode(parsed.agentMode),
       retrievalMode: normalizePersistedRetrievalMode(parsed.retrievalMode),
       selectedSkills: normalizePersistedSkillList(parsed.selectedSkills),
@@ -265,8 +263,7 @@ export async function loadChatPreferences(projectPath: string): Promise<ChatPref
     }
   } catch {
     return {
-      useWebSearch: false,
-      useAnyTxtSearch: false,
+      useWebSearch: true,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],

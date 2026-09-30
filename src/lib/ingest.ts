@@ -39,6 +39,7 @@ import {
 } from "@/lib/extract-source-images"
 import { captionMarkdownImages, loadCaptionCache } from "@/lib/image-caption-pipeline"
 import type { MultimodalConfig } from "@/stores/wiki-store"
+import { toCodexOnlyConfig } from "@/lib/codex-only-config"
 import { GENERATION_WIKI_TYPES } from "@/lib/wiki-page-types"
 import { computeContextBudget } from "@/lib/context-budget"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
@@ -297,35 +298,15 @@ interface LongSourceCheckpoint {
 /**
  * Resolve the LLM config that the caption pipeline should use.
  * `null` = captioning is OFF, caller should skip the pipeline
- * entirely. Otherwise either the main `llmConfig` (when
- * `useMainLlm` is set) or the dedicated multimodal endpoint
- * fields, projected into the same `LlmConfig` shape so callers
- * pass it through to `streamChat` unchanged.
+ * entirely. Enabled captioning always uses the active main config,
+ * normalized for the Codex CLI.
  */
-function resolveCaptionConfig(
+export function resolveCaptionConfig(
   mm: MultimodalConfig,
   mainLlm: LlmConfig,
 ): LlmConfig | null {
   if (!mm.enabled) return null
-  if (mm.useMainLlm) return mainLlm
-  return {
-    provider: mm.provider,
-    apiKey: mm.apiKey,
-    model: mm.model,
-    ollamaUrl: mm.ollamaUrl,
-    customEndpoint: mm.customEndpoint,
-    azureApiVersion: mm.azureApiVersion,
-    azureModelFamily: mm.azureModelFamily,
-    apiMode: mm.apiMode,
-    // The dedicated caption provider has no separate reasoning control. Reuse
-    // the ingest preference and let its own provider capabilities normalize it.
-    ingestReasoning: mainLlm.ingestReasoning,
-    // The caption helper hits `streamChat` directly, which doesn't
-    // care about `maxContextSize` (that field is for the analysis
-    // / generation prompt-truncation logic). Keep it set so the
-    // shape matches LlmConfig.
-    maxContextSize: mainLlm.maxContextSize,
-  }
+  return toCodexOnlyConfig(mainLlm)
 }
 import { buildLanguageDirective, getOutputLanguage } from "@/lib/output-language"
 import { detectLanguage } from "@/lib/detect-language"
@@ -610,10 +591,10 @@ function throwIfIngestAborted(signal: AbortSignal | undefined, activityId?: stri
   if (activityId) {
     useActivityStore.getState().updateItem(activityId, {
       status: "error",
-      detail: "Ingest cancelled",
+      detail: "资料整理已取消",
     })
   }
-  throw new Error("Ingest cancelled")
+  throw new Error("资料整理已取消")
 }
 
 export function formatIngestWarningLogEntry(
@@ -685,7 +666,7 @@ async function autoIngestImpl(
     type: "ingest",
     title: fileName,
     status: "running",
-    detail: "Reading source...",
+    detail: "正在读取资料……",
     filesWritten: [],
   })
 
@@ -700,10 +681,10 @@ async function autoIngestImpl(
     try {
       const cacheDir = sp.substring(0, sp.lastIndexOf("/"))
       const cachePath = `${cacheDir}/.cache/${fileName}.txt`
-      activity.updateItem(activityId, { detail: "MinerU: parsing PDF..." })
+      activity.updateItem(activityId, { detail: "MinerU：正在解析 PDF……" })
       console.log(`[ingest:mineru] submitting "${fileName}" to MinerU API`)
       const mineruResult = await parseWithMineruResult(mineruCfg, sp, undefined, (msg) => {
-        activity.updateItem(activityId, { detail: `MinerU: ${msg}` })
+        activity.updateItem(activityId, { detail: `MinerU：${msg}` })
       }, signal, {
         projectPath: pp,
         sourceSummarySlug,
@@ -724,11 +705,11 @@ async function autoIngestImpl(
       const msg = trimInlineStatus(err instanceof Error ? err.message : String(err))
       console.warn(`[ingest:mineru] MinerU parsing failed, falling back to pdfium: ${msg}`)
       activity.updateItem(activityId, {
-        detail: `MinerU failed, falling back to built-in PDF extraction: ${msg}`,
+        detail: `MinerU 解析失败，已改用内置 PDF 解析：${msg}`,
       })
     }
     if (mineruSucceeded && !signal?.aborted) {
-      activity.updateItem(activityId, { detail: "Reading source..." })
+      activity.updateItem(activityId, { detail: "正在读取资料……" })
     }
   }
 
@@ -819,7 +800,7 @@ async function autoIngestImpl(
                   outputLanguage: getLanguagePromptName(getOutputLanguage(sourceContent)),
                   onProgress: (done, total) =>
                     activity.updateItem(activityId, {
-                      detail: `Captioning images... ${done}/${total}`,
+                      detail: `正在生成图片描述…… ${done}/${total}`,
                     }),
                 }),
               )
@@ -856,7 +837,7 @@ async function autoIngestImpl(
       }
       activity.updateItem(activityId, {
         status: "done",
-        detail: `Skipped (unchanged) — ${cachedFiles.length} files from previous ingest`,
+        detail: `资料没有变化，已沿用上次生成的 ${cachedFiles.length} 个文件`,
         filesWritten: cachedFiles,
       })
       return cachedFiles
@@ -880,7 +861,7 @@ async function autoIngestImpl(
   //
   // Failure here is never fatal — extractAndSaveSourceImages logs
   // and returns [] on any error.
-  activity.updateItem(activityId, { detail: "Extracting embedded images..." })
+  activity.updateItem(activityId, { detail: "正在提取文档中的图片……" })
   console.log(`[ingest:diag] full-pipeline branch: starting image extraction for ${sp}`)
   const skipNativePdfImageExtraction = isPdf && (
     hasMineruImageRefs(sourceContent, sourceSummarySlug)
@@ -958,7 +939,7 @@ async function autoIngestImpl(
     savedImages.length > 0 &&
     /!\[\]\(/.test(enrichedSourceContent)
   ) {
-    activity.updateItem(activityId, { detail: "Captioning images..." })
+    activity.updateItem(activityId, { detail: "正在生成图片描述……" })
     const ourMediaPrefix = `${pp}/wiki/media/${sourceSummarySlug}/`
     try {
       const result = await withProjectLock(`${pp}\0image-caption-cache`, () =>
@@ -975,7 +956,7 @@ async function autoIngestImpl(
           outputLanguage: getLanguagePromptName(getOutputLanguage(enrichedSourceContent)),
           onProgress: (done, total) =>
             activity.updateItem(activityId, {
-              detail: `Captioning images... ${done}/${total}`,
+              detail: `正在生成图片描述…… ${done}/${total}`,
             }),
         }),
       )
@@ -1026,8 +1007,8 @@ async function autoIngestImpl(
   // key entities, concepts, main arguments, connections to existing wiki, contradictions
   activity.updateItem(activityId, {
     detail: precomputedAnalysis
-      ? "Step 1/2: Consolidating long-source analysis..."
-      : "Step 1/2: Analyzing source...",
+      ? "第 1/2 步：正在汇总长文档分析……"
+      : "第 1/2 步：正在分析资料……",
   })
 
   let analysis = precomputedAnalysis
@@ -1043,7 +1024,7 @@ async function autoIngestImpl(
         onToken: (token) => { analysis += token },
         onDone: () => {},
         onError: (err) => {
-          activity.updateItem(activityId, { status: "error", detail: `Analysis failed: ${err.message}` })
+          activity.updateItem(activityId, { status: "error", detail: `资料分析失败：${err.message}` })
         },
       },
       signal,
@@ -1056,12 +1037,12 @@ async function autoIngestImpl(
   // processNext's catch-block path (retry / mark failed) engages.
   const analysisActivity = useActivityStore.getState().items.find((i) => i.id === activityId)
   if (analysisActivity?.status === "error") {
-    throw new Error(analysisActivity.detail || "Analysis stream failed")
+    throw new Error(analysisActivity.detail || "资料分析中断")
   }
 
   // ── Step 2: Generation ────────────────────────────────────────
   // LLM takes the analysis as context and produces wiki files + review items
-  activity.updateItem(activityId, { detail: "Step 2/2: Generating wiki pages..." })
+  activity.updateItem(activityId, { detail: "第 2/2 步：正在生成知识库页面……" })
 
   let generation = ""
 
@@ -1098,7 +1079,7 @@ async function autoIngestImpl(
       onToken: (token) => { generation += token },
       onDone: () => {},
       onError: (err) => {
-        activity.updateItem(activityId, { status: "error", detail: `Generation failed: ${err.message}` })
+        activity.updateItem(activityId, { status: "error", detail: `知识库页面生成失败：${err.message}` })
       },
     },
     signal,
@@ -1111,7 +1092,7 @@ async function autoIngestImpl(
 
   const generationActivity = useActivityStore.getState().items.find((i) => i.id === activityId)
   if (generationActivity?.status === "error") {
-    throw new Error(generationActivity.detail || "Generation stream failed")
+    throw new Error(generationActivity.detail || "知识库页面生成中断")
   }
   throwIfIngestAborted(signal, activityId)
 
@@ -1165,7 +1146,7 @@ async function autoIngestImpl(
   // ── Step 3: Write files ───────────────────────────────────────
   return runCommit(async () => {
   throwIfIngestAborted(signal, activityId)
-  activity.updateItem(activityId, { detail: "Writing files..." })
+  activity.updateItem(activityId, { detail: "正在写入文件……" })
   await migrateLegacySourceSummaryIfSafe(pp, sourceIdentity, sourceSummaryPath)
   const writeResult = await writeFileBlocks(
     pp,
@@ -1189,7 +1170,7 @@ async function autoIngestImpl(
 
   if (unrecoveredTruncatedPaths.length > 0 && !signal?.aborted) {
     activity.updateItem(activityId, {
-      detail: `Retrying truncated wiki files: ${unrecoveredTruncatedPaths.join(", ")}`,
+      detail: `正在重新处理内容不完整的知识库文件：${unrecoveredTruncatedPaths.join(", ")}`,
     })
     let repairOutput = ""
     let repairFailed = false
@@ -1221,7 +1202,7 @@ async function autoIngestImpl(
           onDone: () => {},
           onError: (err) => {
             repairFailed = true
-            writeWarnings.push(`Truncated FILE repair failed: ${err.message}`)
+            writeWarnings.push(`修复内容不完整的文件失败：${err.message}`)
           },
         },
         signal,
@@ -1282,7 +1263,7 @@ async function autoIngestImpl(
     } catch (err) {
       throwIfIngestAborted(signal, activityId)
       writeWarnings.push(
-        `Truncated FILE repair failed: ${err instanceof Error ? err.message : String(err)}`,
+        `修复内容不完整的文件失败：${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }
@@ -1294,7 +1275,7 @@ async function autoIngestImpl(
     }
   } catch (err) {
     writeWarnings.push(
-      `Deterministic index update failed: ${err instanceof Error ? err.message : String(err)}`,
+      `更新知识库索引失败：${err instanceof Error ? err.message : String(err)}`,
     )
   }
 
@@ -1311,7 +1292,7 @@ async function autoIngestImpl(
       onFileWritten?.("wiki/log.md")
     } catch (err) {
       writeWarnings.push(
-        `Deterministic log update failed: ${err instanceof Error ? err.message : String(err)}`,
+        `更新知识库日志失败：${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }
@@ -1385,10 +1366,10 @@ async function autoIngestImpl(
         ? `${hardFailures.length} wiki file write failure(s)`
         : "",
       unrecoveredTruncatedPaths.length > 0
-        ? `${unrecoveredTruncatedPaths.length} truncated wiki file(s) could not be repaired: ${unrecoveredTruncatedPaths.join(", ")}`
+        ? `${unrecoveredTruncatedPaths.length} 个内容不完整的知识库文件无法修复：${unrecoveredTruncatedPaths.join(", ")}`
         : "",
     ].filter(Boolean)
-    const message = `Ingest incomplete: ${reasons.join("; ")}`
+    const message = `资料整理未完成：${reasons.join("；")}`
     activity.updateItem(activityId, {
       status: "error",
       detail: warningSummary
@@ -2058,7 +2039,7 @@ async function writeFileBlocks(
       completedInputPaths.push(rawRelativePath)
       onFileWritten?.(relativePath)
     } catch (err) {
-      const msg = `Failed to write "${relativePath}": ${err instanceof Error ? err.message : String(err)}`
+      const msg = `写入“${relativePath}”失败：${err instanceof Error ? err.message : String(err)}`
       console.error(`[ingest] ${msg}`)
       warnings.push(msg)
       hardFailures.push(relativePath)
@@ -2111,8 +2092,8 @@ function parseReviewBlocks(
           return { label, action: label }
         })
       : [
-          { label: "Approve", action: "Approve" },
-          { label: "Skip", action: "Skip" },
+          { label: "同意", action: "Approve" },
+          { label: "跳过", action: "Skip" },
         ]
 
     // Parse PAGES line
@@ -2317,7 +2298,7 @@ export function buildGenerationPrompt(
     "- Do not merge or generalize a claim about one subject into another subject's page solely because they share terms (for example context window size, benchmark name, dataset, architecture, or feature name).",
     "- If a page needs to mention another subject for comparison, write it explicitly as a comparison and cite which source/frontmatter `sources` entry supports that statement.",
     "- Use kebab-case for Latin-script filenames; for Chinese/Japanese/Korean titles keep the CJK characters (do NOT romanize to pinyin/romaji or translate to English)",
-    "- Derive filenames from the page title in the mandatory output language, but short proper nouns and technical identifiers take precedence: preserve names such as OpenAI, GPT-5, Transformer, CLIP, ImageNet, PyTorch, CUDA, GitHub, arXiv, React, LanceDB, AnyTXT, MinerU, model names, dataset names, tool names, and code identifiers in their standard original form. Do not put raw URLs, citation strings, or full paper titles directly into file paths; convert surrounding descriptive prose to a safe readable title. For Chinese/Japanese/Korean prose titles, keep readable CJK characters in the filename instead of translating the slug to English.",
+    "- Derive filenames from the page title in the mandatory output language, but short proper nouns and technical identifiers take precedence: preserve names such as OpenAI, GPT-5, Transformer, CLIP, ImageNet, PyTorch, CUDA, GitHub, arXiv, React, LanceDB, MinerU, model names, dataset names, tool names, and code identifiers in their standard original form. Do not put raw URLs, citation strings, or full paper titles directly into file paths; convert surrounding descriptive prose to a safe readable title. For Chinese/Japanese/Korean prose titles, keep readable CJK characters in the filename instead of translating the slug to English.",
     "- Preserve structured source data verbatim: copy SQL DDL / CREATE TABLE statements, schema definitions, API signatures, configuration, and tabular data into fenced code blocks (or Markdown tables) in the source summary page instead of paraphrasing them. Exact column names, types, constraints, primary/foreign keys, and indexes must survive ingest — a prose-only summary that drops them loses the structure the user imported the source to keep.",
     "- Follow the analysis recommendations on what to emphasize",
     "- If the analysis found connections to existing pages, add cross-references",
@@ -2910,7 +2891,7 @@ async function analyzeLongSourceInChunks(
 
   if (completedThrough > 0) {
     activity.updateItem(activityId, {
-      detail: `Resuming long source analysis from chunk ${completedThrough + 1}/${chunks.length}...`,
+      detail: `正在从第 ${completedThrough + 1}/${chunks.length} 个文本块继续分析长资料……`,
     })
   }
 
@@ -2918,7 +2899,7 @@ async function analyzeLongSourceInChunks(
     if (chunk.index <= completedThrough) continue
     throwIfIngestAborted(signal, activityId)
     activity.updateItem(activityId, {
-      detail: `Analyzing long source chunk ${chunk.index}/${chunk.total}...`,
+      detail: `正在分析长资料的第 ${chunk.index}/${chunk.total} 个文本块……`,
     })
 
     let raw = ""
@@ -2942,7 +2923,7 @@ async function analyzeLongSourceInChunks(
         onDone: () => {},
         onError: (err) => {
           hadError = true
-          activity.updateItem(activityId, { status: "error", detail: `Chunk analysis failed: ${err.message}` })
+          activity.updateItem(activityId, { status: "error", detail: `文本块分析失败：${err.message}` })
         },
       },
       signal,

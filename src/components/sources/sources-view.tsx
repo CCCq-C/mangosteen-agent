@@ -172,7 +172,7 @@ export function SourcesView() {
       title: t("sources.importSourceFiles"),
       filters: [
         {
-          name: "Documents",
+          name: "文档",
           extensions: [
             "md", "mdx", "txt", "org", "rtf", "pdf",
             "html", "htm", "xml",
@@ -182,25 +182,25 @@ export function SourcesView() {
           ],
         },
         {
-          name: "Data",
+          name: "数据文件",
           extensions: ["json", "jsonl", "csv", "tsv", "yaml", "yml", "ndjson"],
         },
         {
-          name: "Code",
+          name: "代码",
           extensions: [
             "py", "js", "ts", "jsx", "tsx", "rs", "go", "java",
             "c", "cpp", "h", "rb", "php", "swift", "sql", "sh",
           ],
         },
         {
-          name: "Images",
+          name: "图片",
           extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "avif", "heic"],
         },
         {
-          name: "Media",
+          name: "音视频",
           extensions: ["mp4", "webm", "mov", "avi", "mkv", "mp3", "wav", "ogg", "flac", "m4a"],
         },
-        { name: "All Files", extensions: ["*"] },
+        { name: "所有文件", extensions: ["*"] },
       ],
     })
 
@@ -316,7 +316,7 @@ export function SourcesView() {
       }
     } catch (err) {
       console.error("Failed to delete source:", err)
-      await appDialog.alert({ message: `Failed to delete: ${err}` })
+      await appDialog.alert({ message: `删除失败：${err}` })
     }
   }
 
@@ -352,7 +352,7 @@ export function SourcesView() {
       }
     } catch (err) {
       console.error("Failed to delete folder:", err)
-      await appDialog.alert({ message: `Failed to delete folder: ${err}` })
+      await appDialog.alert({ message: `删除文件夹失败：${err}` })
     }
   }
 
@@ -405,7 +405,7 @@ export function SourcesView() {
           </Button>
           <Button size="sm" onClick={handleImportFolder} disabled={importing}>
             <Plus className="mr-1 h-4 w-4" />
-            {t("sources.importFolder", "Folder")}
+            {t("sources.importFolder", "文件夹")}
           </Button>
           <Button size="sm" onClick={() => setUrlDialogOpen(true)} disabled={importing}>
             <Link className="mr-1 h-4 w-4" />
@@ -484,7 +484,7 @@ export function SourcesView() {
         {refreshError && (
           <div className="mx-4 mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {t("sources.refreshFailed", {
-              defaultValue: "Failed to refresh sources: {{error}}",
+              defaultValue: "刷新资料失败：{{error}}",
               error: refreshError,
             })}
           </div>
@@ -495,11 +495,11 @@ export function SourcesView() {
               <span className="font-medium">
                 {importOutcome.error
                   ? t("sources.importSkip.failed", {
-                      defaultValue: "Import failed: {{error}}",
+                      defaultValue: "导入失败：{{error}}",
                       error: importOutcome.error,
                     })
                   : t("sources.importSkip.summary", {
-                      defaultValue: "Imported {{imported}}, skipped {{skipped}}",
+                      defaultValue: "已导入 {{imported}} 个，跳过 {{skipped}} 个",
                       imported: importOutcome.importedCount,
                       skipped: importOutcome.skipped.length,
                     })}
@@ -508,7 +508,7 @@ export function SourcesView() {
                 type="button"
                 onClick={() => setImportOutcome(null)}
                 className="shrink-0 rounded p-0.5 hover:bg-destructive/20"
-                aria-label={t("common.dismiss", { defaultValue: "Dismiss" })}
+                aria-label={t("common.dismiss", { defaultValue: "关闭" })}
               >
                 <X className="h-3 w-3" />
               </button>
@@ -643,11 +643,13 @@ export function summarizeImportOutcome(
   result: SourceImportResult | null,
   error: unknown,
 ): ImportOutcome | null {
-  if (error) {
+  if (error || result?.ingestError) {
     return {
       importedCount: result?.imported.length ?? 0,
       skipped: result?.skipped ?? [],
-      error: error instanceof Error ? error.message : String(error),
+      error: error
+        ? error instanceof Error ? error.message : String(error)
+        : result?.ingestError ?? null,
     }
   }
   if (!result || result.skipped.length === 0) return null

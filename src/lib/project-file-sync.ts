@@ -223,7 +223,7 @@ async function migrateUnchangedSourceMoves(
       moved.add(deleted.id)
       moved.add(created.id)
       useFileSyncStore.getState().setLastError(
-        `Failed to migrate moved source metadata: ${err instanceof Error ? err.message : String(err)}`,
+        `迁移已移动资料的元数据失败：${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }

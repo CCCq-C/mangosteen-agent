@@ -58,7 +58,6 @@ interface ChatState {
   ingestSource: string | null
   maxHistoryMessages: number
   useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   selectedSkills: string[]
@@ -85,7 +84,6 @@ interface ChatState {
   clearMessages: () => void
   setMaxHistoryMessages: (n: number) => void
   setUseWebSearch: (enabled: boolean) => void
-  setUseAnyTxtSearch: (enabled: boolean) => void
   setAgentMode: (mode: ChatAgentMode) => void
   setRetrievalMode: (mode: ChatRetrievalMode) => void
   setSelectedSkills: (skills: string[]) => void
@@ -117,8 +115,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   mode: "chat",
   ingestSource: null,
   maxHistoryMessages: 10,
-  useWebSearch: false,
-  useAnyTxtSearch: false,
+  useWebSearch: true,
   agentMode: "standard",
   retrievalMode: "standard",
   selectedSkills: [],
@@ -280,6 +277,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       }
 
+      if (!content.trim() && !agentFileChanges?.length) {
+        return {
+          isStreaming: false,
+          streamingContent: "",
+        }
+      }
+
       const newMessage: DisplayMessage = {
         id: nextId(),
         role: "assistant" as const,
@@ -317,9 +321,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setMaxHistoryMessages: (maxHistoryMessages) => set({ maxHistoryMessages }),
 
-  setUseWebSearch: (useWebSearch) => set({ useWebSearch }),
-
-  setUseAnyTxtSearch: (useAnyTxtSearch) => set({ useAnyTxtSearch }),
+  setUseWebSearch: () => set({ useWebSearch: true }),
 
   setAgentMode: (agentMode) => set({ agentMode }),
 

@@ -35,7 +35,7 @@ function mockStreamChatReturns(text: string) {
 beforeEach(() => {
   mockStreamChat.mockReset()
   useWikiStore.getState().setOutputLanguage("auto")
-  mockStreamChatReturns("TOPIC: Test topic\nQUERY: q1\nQUERY: q2\nQUERY: q3")
+  mockStreamChatReturns("TOPIC: Test topic\nQUERY: q1\nQUERY: q2\nQUERY: q3\nQUERY: q4")
 })
 
 describe("optimizeResearchTopic — language directive", () => {
@@ -87,12 +87,13 @@ describe("optimizeResearchTopic — language directive", () => {
 })
 
 describe("optimizeResearchTopic — response parsing", () => {
-  it("extracts topic and 3 queries from the expected format", async () => {
+  it("extracts topic and 4 complementary queries from the expected format", async () => {
     mockStreamChatReturns([
       "TOPIC: How does attention scale with context length",
       "QUERY: attention transformer context length scaling",
       "QUERY: long context attention mechanisms survey",
       "QUERY: efficient attention sparse",
+      "QUERY: attention benchmark long context accuracy",
     ].join("\n"))
 
     const result = await optimizeResearchTopic(fakeLlmConfig(), "x", "y", "z", "", "")
@@ -101,6 +102,7 @@ describe("optimizeResearchTopic — response parsing", () => {
       "attention transformer context length scaling",
       "long context attention mechanisms survey",
       "efficient attention sparse",
+      "attention benchmark long context accuracy",
     ])
   })
 
@@ -112,12 +114,12 @@ describe("optimizeResearchTopic — response parsing", () => {
     expect(result.searchQueries).toEqual(["original gap"])
   })
 
-  it("caps queries at 3 even if the LLM emits more", async () => {
+  it("caps queries at 4 even if the LLM emits more", async () => {
     mockStreamChatReturns([
       "TOPIC: t",
       "QUERY: 1", "QUERY: 2", "QUERY: 3", "QUERY: 4", "QUERY: 5",
     ].join("\n"))
     const result = await optimizeResearchTopic(fakeLlmConfig(), "x", "y", "z", "", "")
-    expect(result.searchQueries).toHaveLength(3)
+    expect(result.searchQueries).toEqual(["1", "2", "3", "4"])
   })
 })

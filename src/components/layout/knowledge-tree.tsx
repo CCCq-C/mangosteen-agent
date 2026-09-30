@@ -28,16 +28,16 @@ interface WikiPageInfo {
 }
 
 const TYPE_CONFIG: Record<string, { icon: typeof FileText; label: string; color: string; order: number }> = {
-  overview:    { icon: Layout,      label: "Overview",     color: "text-yellow-500", order: 0 },
-  entity:      { icon: Users,       label: "Entities",     color: "text-blue-500",   order: 1 },
-  concept:     { icon: Lightbulb,   label: "Concepts",     color: "text-purple-500", order: 2 },
-  source:      { icon: BookOpen,    label: "Sources",      color: "text-orange-500", order: 3 },
-  synthesis:   { icon: GitMerge,    label: "Synthesis",    color: "text-red-500",    order: 4 },
-  finding:     { icon: TrendingUp,  label: "Findings",     color: "text-purple-500", order: 5 },
-  thesis:      { icon: Target,      label: "Theses",       color: "text-rose-500",   order: 6 },
-  methodology: { icon: BookOpen,    label: "Methodologies",color: "text-teal-500",   order: 7 },
-  comparison:  { icon: BarChart3,   label: "Comparisons",  color: "text-emerald-500",order: 8 },
-  query:       { icon: HelpCircle,  label: "Queries",      color: "text-green-500",  order: 9 },
+  overview:    { icon: Layout,      label: "概览",     color: "text-yellow-500", order: 0 },
+  entity:      { icon: Users,       label: "实体",     color: "text-blue-500",   order: 1 },
+  concept:     { icon: Lightbulb,   label: "概念",     color: "text-purple-500", order: 2 },
+  source:      { icon: BookOpen,    label: "来源",     color: "text-orange-500", order: 3 },
+  synthesis:   { icon: GitMerge,    label: "综合",     color: "text-red-500",    order: 4 },
+  finding:     { icon: TrendingUp,  label: "发现",     color: "text-purple-500", order: 5 },
+  thesis:      { icon: Target,      label: "论点",     color: "text-rose-500",   order: 6 },
+  methodology: { icon: BookOpen,    label: "方法",     color: "text-teal-500",   order: 7 },
+  comparison:  { icon: BarChart3,   label: "对比",     color: "text-emerald-500",order: 8 },
+  query:       { icon: HelpCircle,  label: "研究",     color: "text-green-500",  order: 9 },
 }
 
 function typeConfig(type: string): { icon: typeof FileText; label: string; color: string; order: number } {
@@ -139,7 +139,7 @@ export function KnowledgeTree() {
         if (selectedFile === pagePath) setSelectedFile(null)
       } catch (err) {
         console.error("[KnowledgeTree] delete failed:", err)
-        await appDialog.alert({ message: `Failed to delete: ${err}` })
+        await appDialog.alert({ message: `删除失败：${err}` })
       } finally {
         setDeletingPath(null)
       }
@@ -150,7 +150,7 @@ export function KnowledgeTree() {
   if (!project) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
-        No project open
+        尚未打开项目
       </div>
     )
   }
@@ -424,7 +424,7 @@ function DeleteButton({
         size="icon"
         className={`h-6 w-6 shrink-0 cursor-default ${className}`}
         disabled
-        title={`Deleting ${name}…`}
+        title={`正在删除 ${name}……`}
       >
         <Trash2 className="h-3 w-3 animate-pulse text-destructive" />
       </Button>
@@ -440,10 +440,10 @@ function DeleteButton({
           e.stopPropagation()
           onClick()
         }}
-        title={`Click again to delete ${name} and clean up references`}
+        title={`再次点击以删除 ${name} 并清理相关引用`}
       >
         <Trash2 className="mr-0.5 h-3 w-3" />
-        Confirm
+        确认
       </Button>
     )
   }
@@ -456,7 +456,7 @@ function DeleteButton({
         e.stopPropagation()
         onClick()
       }}
-      title={`Delete ${name} (and clean up references)`}
+      title={`删除 ${name}（同时清理相关引用）`}
     >
       <Trash2 className="h-3 w-3" />
     </Button>

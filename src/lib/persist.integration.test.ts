@@ -328,7 +328,6 @@ describe("chat persistence — round-trip (new format)", () => {
   it("round-trips chat search preferences", async () => {
     await saveChatPreferences(tmp.path, {
       useWebSearch: true,
-      useAnyTxtSearch: false,
       agentMode: "deep",
       retrievalMode: "smart",
       selectedSkills: ["reviewer", "illustrator"],
@@ -336,7 +335,6 @@ describe("chat persistence — round-trip (new format)", () => {
     })
     await expect(loadChatPreferences(tmp.path)).resolves.toEqual({
       useWebSearch: true,
-      useAnyTxtSearch: false,
       agentMode: "deep",
       retrievalMode: "smart",
       selectedSkills: ["reviewer", "illustrator"],
@@ -351,7 +349,6 @@ describe("chat persistence — round-trip (new format)", () => {
   it("round-trips faithful source retrieval preference", async () => {
     await saveChatPreferences(tmp.path, {
       useWebSearch: false,
-      useAnyTxtSearch: false,
       agentMode: "standard",
       retrievalMode: "faithful",
       selectedSkills: [],
@@ -359,13 +356,13 @@ describe("chat persistence — round-trip (new format)", () => {
     })
 
     const loaded = await loadChatPreferences(tmp.path)
+    expect(loaded.useWebSearch).toBe(true)
     expect(loaded.retrievalMode).toBe("faithful")
   })
 
-  it("defaults chat search preferences to off when no file exists", async () => {
+  it("defaults chat search preferences to on when no file exists", async () => {
     await expect(loadChatPreferences(tmp.path)).resolves.toEqual({
-      useWebSearch: false,
-      useAnyTxtSearch: false,
+      useWebSearch: true,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],

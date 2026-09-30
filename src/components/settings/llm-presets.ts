@@ -1,4 +1,5 @@
 import type { AzureModelFamily, CustomLlmPreset } from "@/stores/wiki-store"
+import { DEFAULT_CODEX_MODEL } from "@/lib/codex-only-config"
 
 /**
  * Curated LLM provider presets.
@@ -63,7 +64,7 @@ export const LLM_PRESETS: LlmPreset[] = [
   {
     id: "anthropic",
     label: "Anthropic (Claude)",
-    hint: "Official Claude API",
+    hint: "Claude 官方 API",
     provider: "anthropic",
     defaultModel: "claude-sonnet-4-5-20250929",
     // Cross-referenced with hermes-agent/hermes_cli/models.py:233-242.
@@ -83,8 +84,8 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
   {
     id: "claude-code-cli",
-    label: "Claude Code CLI (local)",
-    hint: "Uses the local `claude` binary — no API key needed",
+    label: "Claude Code CLI（本机）",
+    hint: "使用本机 `claude` 程序，无需 API 密钥",
     provider: "claude-code",
     defaultModel: "claude-sonnet-4-6",
     // Mirrors anthropic preset; the CLI forwards to the same Anthropic
@@ -101,10 +102,10 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
   {
     id: "codex-cli",
-    label: "Codex CLI (local)",
-    hint: "Uses the local `codex` binary — no API key needed",
+    label: "Codex CLI（本机）",
+    hint: "使用本机 `codex` 程序，无需 API 密钥",
     provider: "codex-cli",
-    defaultModel: "gpt-5.4-mini",
+    defaultModel: DEFAULT_CODEX_MODEL,
     suggestedModels: [
       "gpt-5.4-mini",
       "gpt-5.4",
@@ -117,7 +118,7 @@ export const LLM_PRESETS: LlmPreset[] = [
   {
     id: "openai",
     label: "OpenAI (GPT)",
-    hint: "Official OpenAI API",
+    hint: "OpenAI 官方 API",
     provider: "openai",
     defaultModel: "gpt-4o",
     // Current public GPT models on api.openai.com. Reasoning models and
@@ -139,7 +140,7 @@ export const LLM_PRESETS: LlmPreset[] = [
   {
     id: "google",
     label: "Google (Gemini)",
-    hint: "Generative Language API",
+    hint: "Google Gemini 官方 API",
     provider: "google",
     defaultModel: "gemini-2.5-flash",
     // 2.5 generation is the current stable; 2.0 kept as fallback.
@@ -157,7 +158,7 @@ export const LLM_PRESETS: LlmPreset[] = [
   {
     id: "azure",
     label: "Azure OpenAI",
-    hint: "Azure OpenAI resource endpoint; Model field is the deployment name",
+    hint: "Azure OpenAI 服务；模型字段填写部署名称",
     provider: "azure",
     baseUrl: "https://your-resource.openai.azure.com",
     defaultModel: "your-deployment-name",
@@ -382,7 +383,7 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
   {
     id: "minimax-global",
-    label: "MiniMax (Global)",
+    label: "MiniMax（国际）",
     hint: "api.minimax.io/anthropic",
     provider: "custom",
     baseUrl: "https://api.minimax.io/anthropic",
@@ -496,8 +497,8 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
   {
     id: "ollama-local",
-    label: "Ollama (Local)",
-    hint: "Self-hosted llama.cpp / Ollama",
+    label: "Ollama（本机）",
+    hint: "本机运行的 llama.cpp 或 Ollama",
     provider: "ollama",
     baseUrl: "http://localhost:11434",
     // Intentionally no suggestedModels: local set depends on what the
@@ -506,7 +507,7 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
   {
     id: "ollama-cloud",
-    label: "Ollama Cloud",
+    label: "Ollama 云服务",
     hint: "ollama.com",
     provider: "custom",
     baseUrl: "https://ollama.com/v1",
@@ -523,8 +524,8 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
   {
     id: "custom",
-    label: "Custom",
-    hint: "Any OpenAI- or Anthropic-compatible endpoint",
+    label: "自定义",
+    hint: "任何兼容 OpenAI 或 Anthropic API 的服务地址",
     provider: "custom",
     // Wire protocol is chosen via the "API 模式" toggle in the expanded
     // panel — no need for separate presets per mode. User supplies the
@@ -534,16 +535,31 @@ export const LLM_PRESETS: LlmPreset[] = [
   },
 ]
 
+function findBasePreset(id: string): LlmPreset | undefined {
+  return LLM_PRESETS.find((preset) => preset.id === id && preset.id !== "custom")
+}
+
+export function createProfilePreset(basePresetId: string, label?: string): CustomLlmPreset {
+  const basePreset = findBasePreset(basePresetId)
+  const profileLabel = label?.trim().slice(0, 80) || basePreset?.label || "自定义"
+  return { id: `custom-${crypto.randomUUID()}`, label: profileLabel, basePresetId }
+}
+
 export function availableLlmPresets(customPresets: CustomLlmPreset[] = []): LlmPreset[] {
   return [
     ...LLM_PRESETS,
-    ...customPresets.map((preset) => ({
-      id: preset.id,
-      label: preset.label,
-      hint: "Custom OpenAI- or Anthropic-compatible endpoint",
-      provider: "custom" as const,
-      apiMode: "chat_completions" as const,
-    })),
+    ...customPresets.map((preset) => {
+      const basePreset = preset.basePresetId && findBasePreset(preset.basePresetId)
+      return basePreset
+        ? { ...basePreset, id: preset.id, label: preset.label }
+        : {
+            id: preset.id,
+            label: preset.label,
+            hint: "自定义兼容 OpenAI 或 Anthropic API 的服务地址",
+            provider: "custom" as const,
+            apiMode: "chat_completions" as const,
+          }
+    }),
   ]
 }
 

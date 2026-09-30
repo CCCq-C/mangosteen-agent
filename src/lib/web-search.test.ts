@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { hasConfiguredDeepResearchSources, hasConfiguredSearchProvider, resolveSearchConfig, webSearch } from "./web-search"
+import {
+  LOCAL_SEARCH_DEFAULT_URL,
+  migrateSearchConfigToLocalDefault,
+  hasConfiguredDeepResearchSources,
+  hasConfiguredSearchProvider,
+  resolveSearchConfig,
+  webSearch,
+} from "./web-search"
 
 const invokeMock = vi.hoisted(() => vi.fn())
 
@@ -110,18 +117,45 @@ describe("webSearch", () => {
     expect(resolved.ollamaUrl).toBe("https://ollama.com")
   })
 
-  it("tracks Deep Research source configuration independently from the active web provider", () => {
+  it("uses the active web provider for Deep Research", () => {
     expect(hasConfiguredDeepResearchSources({
       provider: "none",
       apiKey: "",
-      deepResearchSource: "anytxt",
-      anyTxt: { enabled: true, endpoint: "http://127.0.0.1:9920" },
-    })).toBe(true)
-    expect(hasConfiguredDeepResearchSources({
-      provider: "none",
-      apiKey: "",
-      deepResearchSource: "both",
-      anyTxt: { enabled: false, endpoint: "" },
     })).toBe(false)
+  })
+
+  it("always adopts the bundled local search while provider settings are hidden", () => {
+    expect(migrateSearchConfigToLocalDefault(null)).toEqual(expect.objectContaining({
+      provider: "searxng",
+      searXngUrl: LOCAL_SEARCH_DEFAULT_URL,
+      deepResearchSource: "web",
+    }))
+    expect(migrateSearchConfigToLocalDefault({
+      provider: "none",
+      apiKey: "",
+      providerConfigs: {},
+      searXngUrl: "",
+      ollamaUrl: "https://ollama.com",
+      deepResearchSource: "web",
+    })).toEqual(expect.objectContaining({
+      provider: "searxng",
+      searXngUrl: LOCAL_SEARCH_DEFAULT_URL,
+      deepResearchSource: "web",
+    }))
+    expect(migrateSearchConfigToLocalDefault({
+      provider: "none",
+      apiKey: "",
+      providerConfigs: { tavily: { apiKey: "saved-key" } },
+    })).toEqual(expect.objectContaining({
+      provider: "searxng",
+      searXngUrl: LOCAL_SEARCH_DEFAULT_URL,
+    }))
+    expect(migrateSearchConfigToLocalDefault({
+      provider: "tavily",
+      apiKey: "saved-key",
+    })).toEqual(expect.objectContaining({
+      provider: "searxng",
+      searXngUrl: LOCAL_SEARCH_DEFAULT_URL,
+    }))
   })
 })

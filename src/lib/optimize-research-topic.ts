@@ -37,13 +37,15 @@ export async function optimizeResearchTopic(
     "Generate a research topic and search queries that are specific to this wiki's domain and purpose.",
     "The topic should precisely describe what information would fill this knowledge gap.",
     "The search queries should be optimized for web search engines — keyword-rich, specific, not generic.",
+    "The four queries must cover complementary angles rather than paraphrasing each other.",
     "",
     "## Output Format (STRICT — follow exactly, no other text)",
-    "Respond with EXACTLY 4 lines, no more:",
+    "Respond with EXACTLY 5 lines, no more:",
     "TOPIC: <one sentence — MUST be in the mandatory output language declared above>",
     "QUERY: <query 1 — may use English keywords if they better match search engines>",
     "QUERY: <query 2>",
     "QUERY: <query 3>",
+    "QUERY: <query 4>",
   ].filter(Boolean).join("\n")
 
   let result = ""
@@ -64,7 +66,7 @@ export async function optimizeResearchTopic(
 
   const topic = topicMatch?.[1]?.trim() ?? gapTitle
   const searchQueries = queryMatches
-    .slice(0, 3)
+    .slice(0, 4)
     .map((m) => m[1].trim())
     .filter((q) => q.length > 0)
 

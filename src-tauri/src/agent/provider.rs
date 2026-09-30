@@ -58,9 +58,28 @@ pub struct LlmConfig {
     /// Missing keeps the historical streaming behavior for existing configs.
     #[serde(default)]
     pub streaming_enabled: Option<bool>,
+    /// Mirrors the settings toggle for local Codex CLI calls. Missing keeps
+    /// the historical behavior of loading the user's local CLI config.
+    #[serde(default)]
+    pub local_cli_isolation: bool,
+    /// Overall Codex CLI execution limit. Missing retains the 10-minute
+    /// default used by the interactive transport.
+    #[serde(default)]
+    pub codex_cli_timeout_minutes: Option<u64>,
 }
 
 impl LlmConfig {
+    pub fn into_codex_only(mut self) -> Self {
+        let was_codex = self.provider == "codex-cli";
+        self.provider = "codex-cli".to_string();
+        self.api_key.clear();
+        self.custom_endpoint.clear();
+        if !was_codex || self.model.trim().is_empty() {
+            self.model = "gpt-5.6-sol".to_string();
+        }
+        self
+    }
+
     pub fn is_usable_for_backend_http(&self) -> bool {
         let provider = self.provider.as_str();
         let has_model = !self.model.trim().is_empty();
@@ -75,6 +94,11 @@ impl LlmConfig {
             "claude-code" | "codex-cli" => false,
             _ => false,
         }
+    }
+
+    pub fn is_usable_for_backend_agent(&self) -> bool {
+        self.is_usable_for_backend_http()
+            || (self.provider == "codex-cli" && !self.model.trim().is_empty())
     }
 }
 
@@ -100,6 +124,149 @@ pub trait AgentLlmProvider: Send + Sync {
         images: &'a [AgentImage],
         on_delta: Box<dyn FnMut(&str) + Send + 'a>,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>>;
+}
+
+#[derive(Debug, Clone)]
+pub enum BackendLlmClient {
+    Http(LlmClient),
+    CodexCli(CodexCliClient),
+}
+
+#[derive(Debug, Clone)]
+pub struct CodexCliClient {
+    config: LlmConfig,
+    project_path: String,
+}
+
+impl BackendLlmClient {
+    pub fn new(config: LlmConfig, project_path: String) -> Result<Self, String> {
+        let config = config.into_codex_only();
+        if config.provider == "codex-cli" {
+            if config.model.trim().is_empty() {
+                return Err("尚未配置 Codex CLI 模型".to_string());
+            }
+            return Ok(Self::CodexCli(CodexCliClient {
+                config,
+                project_path,
+            }));
+        }
+        Ok(Self::Http(LlmClient::new(config)?))
+    }
+
+    pub fn structured_task_config(self, max_tokens: u32) -> Self {
+        match self {
+            Self::Http(client) => Self::Http(client.structured_task_config(max_tokens)),
+            Self::CodexCli(client) => Self::CodexCli(client),
+        }
+    }
+}
+
+impl AgentLlmProvider for BackendLlmClient {
+    fn provider_name(&self) -> &str {
+        match self {
+            Self::Http(client) => client.provider_name(),
+            Self::CodexCli(client) => client.provider_name(),
+        }
+    }
+
+    fn model_name(&self) -> &str {
+        match self {
+            Self::Http(client) => client.model_name(),
+            Self::CodexCli(client) => client.model_name(),
+        }
+    }
+
+    fn generate_text<'a>(
+        &'a self,
+        system: &'a str,
+        user: &'a str,
+        images: &'a [AgentImage],
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        match self {
+            Self::Http(client) => Box::pin(client.generate_text(system, user, images)),
+            Self::CodexCli(client) => client.generate_text(system, user, images),
+        }
+    }
+
+    fn generate_text_stream<'a>(
+        &'a self,
+        system: &'a str,
+        user: &'a str,
+        images: &'a [AgentImage],
+        on_delta: Box<dyn FnMut(&str) + Send + 'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        match self {
+            Self::Http(client) => {
+                Box::pin(client.generate_text_stream(system, user, images, on_delta))
+            }
+            Self::CodexCli(client) => client.generate_text_stream(system, user, images, on_delta),
+        }
+    }
+}
+
+impl AgentLlmProvider for CodexCliClient {
+    fn provider_name(&self) -> &str {
+        &self.config.provider
+    }
+
+    fn model_name(&self) -> &str {
+        &self.config.model
+    }
+
+    fn generate_text<'a>(
+        &'a self,
+        system: &'a str,
+        user: &'a str,
+        images: &'a [AgentImage],
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            let prompt = codex_cli_prompt(system, user);
+            let cli_images = images
+                .iter()
+                .map(|image| crate::commands::codex_cli::CodexCliImage {
+                    media_type: image.media_type.clone(),
+                    data_base64: image.data_base64.clone(),
+                })
+                .collect::<Vec<_>>();
+            crate::commands::codex_cli::codex_cli_complete(
+                &self.config.model,
+                self.config.local_cli_isolation,
+                crate::commands::codex_cli::codex_timeout_minutes(
+                    self.config.codex_cli_timeout_minutes,
+                ),
+                &prompt,
+                &cli_images,
+                Some(self.project_path.clone()),
+            )
+            .await
+        })
+    }
+
+    fn generate_text_stream<'a>(
+        &'a self,
+        system: &'a str,
+        user: &'a str,
+        images: &'a [AgentImage],
+        mut on_delta: Box<dyn FnMut(&str) + Send + 'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            let answer = self.generate_text(system, user, images).await?;
+            on_delta(&answer);
+            Ok(answer)
+        })
+    }
+}
+
+fn codex_cli_prompt(system: &str, user: &str) -> String {
+    format!(
+        "<SYSTEM>\n{}\n</SYSTEM>\n\n<USER>\n{}\n</USER>",
+        escape_codex_prompt_content(system),
+        escape_codex_prompt_content(user),
+    )
+}
+
+fn escape_codex_prompt_content(text: &str) -> String {
+    text.replace('<', "&lt;").replace('>', "&gt;")
 }
 
 impl AgentLlmProvider for LlmClient {
@@ -193,7 +360,10 @@ impl LlmClient {
             }
             "minimax" => {
                 if !images.is_empty() {
-                    return Err("MiniMax official Anthropic-compatible endpoint does not support image input. Use a vision-capable provider for image chat.".to_string());
+                    return Err(
+                        "MiniMax 官方 Anthropic 兼容服务不支持图片输入，请改用支持识图的模型服务。"
+                            .to_string(),
+                    );
                 }
                 let base = if self.config.custom_endpoint.trim().is_empty() {
                     "https://api.minimax.io/anthropic"
@@ -277,7 +447,10 @@ impl LlmClient {
             }
             "minimax" => {
                 if !images.is_empty() {
-                    return Err("MiniMax official Anthropic-compatible endpoint does not support image input. Use a vision-capable provider for image chat.".to_string());
+                    return Err(
+                        "MiniMax 官方 Anthropic 兼容服务不支持图片输入，请改用支持识图的模型服务。"
+                            .to_string(),
+                    );
                 }
                 let base = if self.config.custom_endpoint.trim().is_empty() {
                     "https://api.minimax.io/anthropic"
@@ -335,17 +508,17 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|err| format!("LLM request failed: {err}"))?;
+            .map_err(|err| format!("大模型请求失败：{err}"))?;
         let status = response.status();
         let text = response
             .text()
             .await
-            .map_err(|err| format!("Failed to read LLM response: {err}"))?;
+            .map_err(|err| format!("无法读取大模型返回内容：{err}"))?;
         if !status.is_success() {
             return Err(format!("LLM HTTP {status}: {}", trim_error_body(&text)));
         }
         let parsed: Value =
-            serde_json::from_str(&text).map_err(|err| format!("Invalid LLM JSON: {err}"))?;
+            serde_json::from_str(&text).map_err(|err| format!("大模型返回了无效 JSON：{err}"))?;
         let content = parsed
             .get("choices")
             .and_then(Value::as_array)
@@ -357,7 +530,7 @@ impl LlmClient {
             .trim()
             .to_string();
         if content.is_empty() {
-            return Err("LLM response did not contain assistant content".to_string());
+            return Err("大模型返回内容中没有智能体回复".to_string());
         }
         Ok(content)
     }
@@ -382,7 +555,7 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|err| format!("LLM request failed: {err}"))?;
+            .map_err(|err| format!("大模型请求失败：{err}"))?;
         collect_sse_text(response, parse_openai_delta, on_delta).await
     }
 
@@ -422,17 +595,17 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|err| format!("LLM request failed: {err}"))?;
+            .map_err(|err| format!("大模型请求失败：{err}"))?;
         let status = response.status();
         let text = response
             .text()
             .await
-            .map_err(|err| format!("Failed to read LLM response: {err}"))?;
+            .map_err(|err| format!("无法读取大模型返回内容：{err}"))?;
         if !status.is_success() {
             return Err(format!("LLM HTTP {status}: {}", trim_error_body(&text)));
         }
         let parsed: Value =
-            serde_json::from_str(&text).map_err(|err| format!("Invalid LLM JSON: {err}"))?;
+            serde_json::from_str(&text).map_err(|err| format!("大模型返回了无效 JSON：{err}"))?;
         let content = parsed
             .get("content")
             .and_then(Value::as_array)
@@ -453,7 +626,7 @@ impl LlmClient {
             .trim()
             .to_string();
         if content.is_empty() {
-            return Err("LLM response did not contain assistant content".to_string());
+            return Err("大模型返回内容中没有智能体回复".to_string());
         }
         Ok(content)
     }
@@ -477,7 +650,7 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|err| format!("LLM request failed: {err}"))?;
+            .map_err(|err| format!("大模型请求失败：{err}"))?;
         collect_sse_text(response, parse_anthropic_delta, on_delta).await
     }
 
@@ -526,17 +699,17 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|err| format!("LLM request failed: {err}"))?;
+            .map_err(|err| format!("大模型请求失败：{err}"))?;
         let status = response.status();
         let text = response
             .text()
             .await
-            .map_err(|err| format!("Failed to read LLM response: {err}"))?;
+            .map_err(|err| format!("无法读取大模型返回内容：{err}"))?;
         if !status.is_success() {
             return Err(format!("LLM HTTP {status}: {}", trim_error_body(&text)));
         }
         let parsed: Value =
-            serde_json::from_str(&text).map_err(|err| format!("Invalid LLM JSON: {err}"))?;
+            serde_json::from_str(&text).map_err(|err| format!("大模型返回了无效 JSON：{err}"))?;
         let content = parsed
             .get("candidates")
             .and_then(Value::as_array)
@@ -555,7 +728,7 @@ impl LlmClient {
             .trim()
             .to_string();
         if content.is_empty() {
-            return Err("LLM response did not contain assistant content".to_string());
+            return Err("大模型返回内容中没有智能体回复".to_string());
         }
         Ok(content)
     }
@@ -582,7 +755,7 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|err| format!("LLM request failed: {err}"))?;
+            .map_err(|err| format!("大模型请求失败：{err}"))?;
         collect_sse_text(response, parse_google_delta, on_delta).await
     }
 
@@ -729,7 +902,7 @@ where
         let text = response
             .text()
             .await
-            .map_err(|err| format!("Failed to read LLM response: {err}"))?;
+            .map_err(|err| format!("无法读取大模型返回内容：{err}"))?;
         return Err(format!("LLM HTTP {status}: {}", trim_error_body(&text)));
     }
 
@@ -744,7 +917,7 @@ where
         collect_sse_line_bytes(&buffer, parse_delta, &mut on_delta, &mut full);
     }
     if full.trim().is_empty() {
-        return Err("LLM response did not contain assistant content".to_string());
+        return Err("大模型返回内容中没有智能体回复".to_string());
     }
     Ok(full.trim().to_string())
 }
@@ -1120,7 +1293,19 @@ mod tests {
             max_context_size: None,
             custom_headers: BTreeMap::new(),
             streaming_enabled: None,
+            local_cli_isolation: false,
+            codex_cli_timeout_minutes: None,
         }
+    }
+
+    #[test]
+    fn codex_only_normalizes_legacy_config_before_client_selection() {
+        let legacy = config("openai");
+
+        assert!(matches!(
+            BackendLlmClient::new(legacy, "C:/project".to_string()),
+            Ok(BackendLlmClient::CodexCli(_))
+        ));
     }
 
     #[test]
@@ -1199,6 +1384,15 @@ mod tests {
     }
 
     #[test]
+    fn codex_cli_is_usable_for_backend_agent_without_an_api_key() {
+        let mut cfg = config("codex-cli");
+        cfg.api_key.clear();
+
+        assert!(cfg.is_usable_for_backend_agent());
+        assert!(!cfg.is_usable_for_backend_http());
+    }
+
+    #[test]
     fn llm_config_parses_existing_app_state_shape() {
         let cfg: LlmConfig = serde_json::from_value(json!({
             "provider": "custom",
@@ -1207,6 +1401,7 @@ mod tests {
             "ollamaUrl": "",
             "customEndpoint": "https://example.com/v1",
             "apiMode": "anthropic_messages",
+            "codexCliTimeoutMinutes": 45,
             "reasoning": {
                 "mode": "custom",
                 "budgetTokens": 4096
@@ -1222,6 +1417,7 @@ mod tests {
         );
         assert_eq!(cfg.max_tokens, None);
         assert_eq!(cfg.streaming_enabled, None);
+        assert_eq!(cfg.codex_cli_timeout_minutes, Some(45));
 
         let disabled: LlmConfig = serde_json::from_value(json!({
             "provider": "openai",

@@ -1989,7 +1989,7 @@ describe("embedAllPages", () => {
       cfg,
       undefined,
       { clearExisting: true },
-    )).rejects.toThrow("Could not read wiki tree")
+    )).rejects.toThrow("无法读取知识库目录")
 
     expect(mockInvoke.mock.calls.map((call) => call[0])).not.toContain("vector_clear_chunks")
   })

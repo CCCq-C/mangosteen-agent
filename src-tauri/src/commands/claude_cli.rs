@@ -229,7 +229,7 @@ pub async fn claude_cli_detect() -> Result<DetectResult, String> {
             installed: false,
             version: None,
             path: Some(path_str),
-            error: Some(format!("Failed to spawn `claude`: {e}")),
+            error: Some(format!("无法启动 `claude`：{e}")),
         }),
         Err(_) => Ok(DetectResult {
             installed: false,
@@ -273,7 +273,7 @@ pub async fn claude_cli_spawn(
         .collect();
 
     if conversation.is_empty() {
-        return Err("No user/assistant messages to send to claude CLI".to_string());
+        return Err("没有可发送给 Claude Code CLI 的对话消息".to_string());
     }
 
     // Synthesize turns with the preamble merged into the first user turn.
@@ -473,37 +473,31 @@ async fn resolve_claude_working_directory(value: Option<String>) -> Result<PathB
         .map(str::trim)
         .filter(|v| !v.is_empty())
         .map(str::to_string)
-        .ok_or_else(|| {
-            "Claude Code CLI requires an active project working directory".to_string()
-        })?;
+        .ok_or_else(|| "Claude Code CLI 需要一个已打开项目作为工作目录".to_string())?;
     let path = Path::new(raw.as_str());
     if !path.is_absolute() {
-        return Err(
-            "Claude Code CLI working directory must be an absolute project path".to_string(),
-        );
+        return Err("Claude Code CLI 工作目录必须是项目的绝对路径".to_string());
     }
     let path_meta = tokio::fs::metadata(path).await.map_err(|e| {
         eprintln!("[claude-cli] failed to read working directory metadata {raw}: {e}");
-        format!("Claude Code CLI working directory does not exist or cannot be read: {raw}")
+        format!("Claude Code CLI 工作目录不存在或无法读取：{raw}")
     })?;
     if !path_meta.is_dir() {
-        return Err(format!(
-            "Claude Code CLI working directory is not a directory: {raw}"
-        ));
+        return Err(format!("Claude Code CLI 工作目录不是文件夹：{raw}"));
     }
     let index_path = path.join("wiki").join("index.md");
     let index_meta = tokio::fs::metadata(&index_path).await.map_err(|e| {
         eprintln!("[claude-cli] failed to read wiki/index.md metadata for {raw}: {e}");
-        format!("Claude Code CLI working directory must be an LLM Wiki project containing wiki/index.md: {raw}")
+        format!("Claude Code CLI 工作目录必须是包含 wiki/index.md 的山竹智能体项目：{raw}")
     })?;
     if !index_meta.is_file() {
         return Err(format!(
-            "Claude Code CLI working directory must be an LLM Wiki project containing wiki/index.md: {raw}"
+            "Claude Code CLI 工作目录必须是包含 wiki/index.md 的山竹智能体项目：{raw}"
         ));
     }
     tokio::fs::canonicalize(path)
         .await
-        .map_err(|e| format!("Failed to canonicalize Claude Code CLI working directory {raw}: {e}"))
+        .map_err(|e| format!("无法解析 Claude Code CLI 工作目录 {raw}：{e}"))
 }
 
 /// Kill a running child registered under `stream_id`. Called on
@@ -660,20 +654,20 @@ mod tests {
         assert!(resolve_claude_working_directory(None)
             .await
             .unwrap_err()
-            .contains("active project"));
+            .contains("已打开项目"));
         assert!(resolve_claude_working_directory(Some("".to_string()))
             .await
             .unwrap_err()
-            .contains("active project"));
+            .contains("已打开项目"));
         assert!(resolve_claude_working_directory(Some("   ".to_string()))
             .await
             .unwrap_err()
-            .contains("active project"));
+            .contains("已打开项目"));
         assert!(
             resolve_claude_working_directory(Some("relative/path".to_string()))
                 .await
                 .unwrap_err()
-                .contains("absolute")
+                .contains("绝对路径")
         );
 
         let dir = std::env::temp_dir().join(format!(

@@ -153,7 +153,7 @@ export function FrontmatterPanel({ data }: FrontmatterPanelProps) {
         <div className="px-4 pt-4">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <Layers className="h-3.5 w-3.5" />
-            Sources
+            来源
             <span className="text-muted-foreground/60">({sources.length})</span>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -189,7 +189,7 @@ export function FrontmatterPanel({ data }: FrontmatterPanelProps) {
         <div className="px-4 pt-4">
           <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <ArrowUpRight className="h-3.5 w-3.5" />
-            Related
+            相关页面
             <span className="text-muted-foreground/60">({related.length})</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -252,10 +252,10 @@ function SourceCard({
   const isMissing = status === "missing"
   const Icon = status === "external" ? ArrowUpRight : iconForSource(name)
   const title = status === "external"
-    ? `Open external source: ${externalUrl}`
+    ? `打开外部来源：${externalUrl}`
     : status === "local"
-      ? `Open ${name}`
-      : `Source not found in raw/sources/: ${name}`
+      ? `打开 ${name}`
+      : `在 raw/sources/ 中找不到资料：${name}`
   return (
     <button
       type="button"
@@ -290,7 +290,7 @@ function RelatedChip({
     <button
       type="button"
       onClick={resolved ? onClick : undefined}
-      title={resolved ? `Open ${slug}` : `Related page not found: ${slug}`}
+      title={resolved ? `打开 ${slug}` : `找不到关联页面：${slug}`}
       className={`group inline-flex max-w-[260px] items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors ${
         resolved
           ? "border-border/60 bg-background hover:border-primary/50 hover:bg-primary/10 cursor-pointer"

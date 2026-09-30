@@ -40,8 +40,8 @@ export function SidebarPanel({ onCollapse }: SidebarPanelProps) {
             type="button"
             onClick={onCollapse}
             className="flex w-9 shrink-0 items-center justify-center border-l text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title={t("layout.hideSidebar", "Hide sidebar")}
-            aria-label={t("layout.hideSidebar", "Hide sidebar")}
+            title={t("layout.hideSidebar", "隐藏侧边栏")}
+            aria-label={t("layout.hideSidebar", "隐藏侧边栏")}
           >
             <PanelLeftClose className="h-4 w-4" />
           </button>

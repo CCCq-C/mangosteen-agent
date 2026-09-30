@@ -60,26 +60,26 @@ export type ValidateResult = { ok: true } | { ok: false; error: string }
 
 export function validateProxyUrl(url: string): ValidateResult {
   const trimmed = url.trim()
-  if (trimmed === "") return { ok: false, error: "URL is empty" }
+  if (trimmed === "") return { ok: false, error: "网址为空" }
 
   let parsed: URL
   try {
     parsed = new URL(trimmed)
   } catch {
-    return { ok: false, error: "Not a valid URL" }
+    return { ok: false, error: "网址格式不正确" }
   }
 
   if (!parsed.protocol) {
-    return { ok: false, error: "URL is missing a scheme (http:// or https://)" }
+    return { ok: false, error: "网址缺少协议（http:// 或 https://）" }
   }
   if (!SUPPORTED_SCHEMES.includes(parsed.protocol as (typeof SUPPORTED_SCHEMES)[number])) {
     return {
       ok: false,
-      error: `Unsupported scheme "${parsed.protocol}". Use http:// or https://`,
+      error: `不支持协议“${parsed.protocol}”，请使用 http:// 或 https://。`,
     }
   }
   if (!parsed.hostname) {
-    return { ok: false, error: "URL is missing a host" }
+    return { ok: false, error: "网址缺少主机地址" }
   }
   return { ok: true }
 }

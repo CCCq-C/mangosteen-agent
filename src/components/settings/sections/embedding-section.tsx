@@ -230,7 +230,7 @@ export function EmbeddingSection({ draft, setDraft }: Props) {
               value={draft.embeddingModel}
               onChange={(e) => setDraft("embeddingModel", e.target.value)}
               list="embedding-model-suggestions"
-              placeholder="e.g. text-embedding-qwen3-embedding-0.6b or gemini-embedding-001"
+              placeholder="例如 text-embedding-qwen3-embedding-0.6b 或 gemini-embedding-001"
             />
             <datalist id="embedding-model-suggestions">
               {EMBEDDING_MODEL_SUGGESTIONS.map((model) => (

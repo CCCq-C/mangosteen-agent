@@ -9,7 +9,8 @@ import { useLintStore } from "@/stores/lint-store"
 import { useChatStore } from "@/stores/chat-store"
 import { BASE_FONT_SIZE_PX, useZoomStore } from "@/stores/zoom-store"
 import { openProject } from "@/commands/fs"
-import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadCustomLlmPresets, loadActivePresetId, loadTaskModelRouting, loadProjectLlmOverride, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
+import { getLastProject, getRecentProjects, saveLastProject, loadLlmConfig, loadLanguage, loadSearchApiConfig, loadEmbeddingConfig, loadMineruConfig, loadMultimodalConfig, loadOutputLanguage, loadProviderConfigs, loadCustomLlmPresets, loadTaskModelRouting, loadProjectLlmOverride, loadProxyConfig, loadScheduledImportConfig, saveScheduledImportConfig, loadSourceWatchConfig, loadApiConfig, loadGeneralConfig, loadZoomLevel } from "@/lib/project-store"
+import { CODEX_PRESET_ID, toCodexOnlyConfig } from "@/lib/codex-only-config"
 import { loadReviewItems, loadLintItems, loadChatHistory, loadChatPreferences } from "@/lib/persist"
 import { setupAutoSave } from "@/lib/auto-save"
 import { startClipWatcher } from "@/lib/clip-watcher"
@@ -302,6 +303,41 @@ function App() {
     }
   }, [])
 
+  // Web search must not depend on unrelated startup work such as preset,
+  // project, or update hydration. A broken old preference should never make
+  // the bundled local search silently disappear.
+  useEffect(() => {
+    async function initLocalSearch() {
+      const { LOCAL_SEARCH_DEFAULT_URL, migrateSearchConfigToLocalDefault } = await import("@/lib/web-search")
+      try {
+        const savedSearchConfig = await loadSearchApiConfig()
+        const migratedSearchConfig = migrateSearchConfigToLocalDefault(savedSearchConfig)
+        const nextSearchConfig = migratedSearchConfig ?? savedSearchConfig
+        if (nextSearchConfig) {
+          useWikiStore.getState().setSearchApiConfig(nextSearchConfig)
+          if (migratedSearchConfig) {
+            const { saveSearchApiConfig } = await import("@/lib/project-store")
+            await saveSearchApiConfig(migratedSearchConfig)
+          }
+        }
+      } catch (err) {
+        console.warn("[local-search] settings hydration failed; using the bundled default:", err)
+      }
+      const activeSearchConfig = useWikiStore.getState().searchApiConfig
+      if (
+        activeSearchConfig.provider === "searxng"
+        && activeSearchConfig.searXngUrl === LOCAL_SEARCH_DEFAULT_URL
+      ) {
+        try {
+          await invoke("ensure_local_search")
+        } catch (err) {
+          console.warn("[local-search] service startup failed:", err)
+        }
+      }
+    }
+    void initLocalSearch()
+  }, [])
+
   // Auto-open last project on startup
   useEffect(() => {
     async function init() {
@@ -312,8 +348,9 @@ function App() {
 
         const savedConfig = await loadLlmConfig()
         if (savedConfig) {
-          useWikiStore.getState().setLlmConfig(savedConfig)
-          useWikiStore.getState().setGlobalLlmConfig(savedConfig)
+          const normalizedConfig = toCodexOnlyConfig(savedConfig)
+          useWikiStore.getState().setLlmConfig(normalizedConfig)
+          useWikiStore.getState().setGlobalLlmConfig(normalizedConfig)
         }
         const savedProviderConfigs = await loadProviderConfigs()
         if (savedProviderConfigs) {
@@ -321,36 +358,10 @@ function App() {
         }
         const savedCustomLlmPresets = await loadCustomLlmPresets()
         useWikiStore.getState().setCustomLlmPresets(savedCustomLlmPresets)
-        const savedActivePreset = await loadActivePresetId()
-        if (savedActivePreset) {
-          useWikiStore.getState().setActivePresetId(savedActivePreset)
-          // Re-resolve the active preset's LlmConfig from (preset defaults
-          // + saved overrides). Without this, preset default updates
-          // (e.g. a corrected Anthropic model ID shipped in a release)
-          // never reach users who are relying on defaults — their stored
-          // `llmConfig` snapshot from a previous launch would keep the
-          // old value. Overrides still win, so an explicit user choice
-          // is preserved.
-          const { findLlmPreset } = await import("@/components/settings/llm-presets")
-          const { resolveConfig } = await import("@/components/settings/preset-resolver")
-          const preset = findLlmPreset(savedActivePreset, savedCustomLlmPresets)
-          if (preset) {
-            const currentFallback = useWikiStore.getState().llmConfig
-            const override = (savedProviderConfigs ?? {})[savedActivePreset]
-            const resolved = resolveConfig(preset, override, currentFallback)
-            useWikiStore.getState().setLlmConfig(resolved)
-            useWikiStore.getState().setGlobalLlmConfig(resolved)
-            const { saveLlmConfig } = await import("@/lib/project-store")
-            await saveLlmConfig(resolved)
-          }
-        }
+        useWikiStore.getState().setActivePresetId(CODEX_PRESET_ID)
         const savedTaskModelRouting = await loadTaskModelRouting()
         if (savedTaskModelRouting) {
           useWikiStore.getState().setTaskModelRouting(savedTaskModelRouting)
-        }
-        const savedSearchConfig = await loadSearchApiConfig()
-        if (savedSearchConfig) {
-          useWikiStore.getState().setSearchApiConfig(savedSearchConfig)
         }
         const savedEmbeddingConfig = await loadEmbeddingConfig()
         if (savedEmbeddingConfig) {
@@ -449,12 +460,12 @@ function App() {
       const llmState = useWikiStore.getState()
       const { resolveProjectLlmConfig } = await import("@/lib/llm-task-routing")
       llmState.setProjectLlmOverride(projectLlmOverride)
-      llmState.setLlmConfig(resolveProjectLlmConfig(
+      llmState.setLlmConfig(toCodexOnlyConfig(resolveProjectLlmConfig(
         llmState.globalLlmConfig,
         llmState.providerConfigs,
         projectLlmOverride,
         llmState.customLlmPresets,
-      ))
+      )))
       const projectOutputLang = await loadOutputLanguage(proj.id)
       useWikiStore.getState().setOutputLanguage(projectOutputLang ?? "auto")
       setSelectedFile(null)
@@ -537,7 +548,6 @@ function App() {
       try {
         const savedChatPreferences = await loadChatPreferences(proj.path)
         useChatStore.getState().setUseWebSearch(savedChatPreferences.useWebSearch)
-        useChatStore.getState().setUseAnyTxtSearch(savedChatPreferences.useAnyTxtSearch)
         useChatStore.getState().setAgentMode(savedChatPreferences.agentMode)
         useChatStore.getState().setRetrievalMode(savedChatPreferences.retrievalMode)
         useChatStore.getState().setDisabledSkills(savedChatPreferences.disabledSkills)
@@ -568,7 +578,7 @@ function App() {
       const validated = await openProject(proj.path)
       await handleProjectOpened(validated)
     } catch (err) {
-      await appDialog.alert({ message: `Failed to open project: ${err}` })
+      await appDialog.alert({ message: `打开项目失败：${err}` })
     }
   }
 
@@ -576,14 +586,14 @@ function App() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "Open Wiki Project",
+      title: "打开知识库项目",
     })
     if (!selected) return
     try {
       const proj = await openProject(selected)
       await handleProjectOpened(proj)
     } catch (err) {
-      await appDialog.alert({ message: `Failed to open project: ${err}` })
+      await appDialog.alert({ message: `打开项目失败：${err}` })
     }
   }
 
@@ -618,7 +628,7 @@ function App() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center bg-background text-muted-foreground">
-        Loading...
+        加载中……
       </div>
     )
   }

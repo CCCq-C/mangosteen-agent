@@ -13,10 +13,10 @@ interface Props {
 }
 
 const UI_LANGUAGES = [
-  { value: "en", label: "English" },
-  { value: "it", label: "Italiano" },
+  { value: "en", label: "英语" },
+  { value: "it", label: "意大利语" },
   { value: "zh", label: "中文" },
-  { value: "ru", label: "Русский" },
+  { value: "ru", label: "俄语" },
 ]
 
 const THEMES = [

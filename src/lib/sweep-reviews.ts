@@ -407,9 +407,9 @@ export async function sweepResolvedReviews(
     // feel like the app froze.
     activityId = activity.addItem({
       type: "query",
-      title: "Review cleanup",
+      title: "AI 建议清理",
       status: "running",
-      detail: `Judging ${stillPending.length} pending review${stillPending.length > 1 ? "s" : ""}…`,
+      detail: `正在判断 ${stillPending.length} 条待处理建议……`,
       filesWritten: [],
     })
 
@@ -426,7 +426,7 @@ export async function sweepResolvedReviews(
     } catch (err) {
       activity.updateItem(activityId, {
         status: "error",
-        detail: `Review cleanup failed: ${err instanceof Error ? err.message : String(err)}`,
+        detail: `AI 建议清理失败：${err instanceof Error ? err.message : String(err)}`,
       })
       activityId = null
     }
@@ -443,13 +443,13 @@ export async function sweepResolvedReviews(
   if (activityId !== null) {
     activity.updateItem(activityId, {
       status: signal?.aborted ? "error" : "done",
-      detail: signal?.aborted ? "Review cleanup cancelled" : detail,
+      detail: signal?.aborted ? "已取消 AI 建议清理" : detail,
     })
   } else if (total > 0) {
     // Rule-only path: no in-progress indicator was shown, add a done item.
     activity.addItem({
       type: "query",
-      title: "Review cleanup",
+      title: "AI 建议清理",
       status: "done",
       detail,
       filesWritten: [],

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use super::router::{QueryIntent, RouterDecision};
 use super::skills::AgentSkill;
@@ -81,11 +81,6 @@ fn build_system_context(
     out.push_str("- graph.search retrieves relationships, neighbors, backlinks, dependencies, and connections between project entities. Prefer it when the requested answer is about how concepts or entities relate, and use concise entity names rather than the full natural-language question.\n");
     if router.should_hint_web {
         out.push_str("- web.search is available when current or external information is useful.\n");
-    }
-    if router.should_hint_anytxt {
-        out.push_str(
-            "- anytxt.search is available for local or remote file content indexed by AnyTXT.\n",
-        );
     }
     out.push_str(&format!(
         "- Router hint: {:?}. {}\n",
@@ -326,6 +321,86 @@ pub async fn load_explicit_context_files(
     out
 }
 
+/// Reads files only when the user explicitly pasted their absolute path into
+/// the current message, so a document the user already identified can be read directly.
+pub async fn load_user_referenced_context_files(message: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut remaining = MAX_EXPLICIT_CONTEXT_CHARS;
+    for path in user_referenced_host_paths(message)
+        .into_iter()
+        .take(MAX_EXPLICIT_CONTEXT_FILES)
+    {
+        let Ok(path) = path.canonicalize() else {
+            continue;
+        };
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(content) =
+            crate::commands::fs::read_file(path.to_string_lossy().into_owned(), Some(false)).await
+        else {
+            continue;
+        };
+        let fitted = trim_chars(content.trim(), remaining.min(MAX_EXPLICIT_FILE_CHARS));
+        if fitted.is_empty() {
+            continue;
+        }
+        remaining = remaining.saturating_sub(fitted.chars().count());
+        out.push((path.to_string_lossy().replace('\\', "/"), fitted));
+        if remaining == 0 {
+            break;
+        }
+    }
+    out
+}
+
+pub fn user_referenced_host_paths(message: &str) -> Vec<PathBuf> {
+    let lowered = message.to_ascii_lowercase();
+    let bytes = message.as_bytes();
+    let mut paths = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+
+    for start in 0..bytes.len().saturating_sub(2) {
+        if !bytes[start].is_ascii_alphabetic()
+            || bytes[start + 1] != b':'
+            || !matches!(bytes[start + 2], b'\\' | b'/')
+        {
+            continue;
+        }
+        let Some(end) = supported_context_extension_end(&lowered, start) else {
+            continue;
+        };
+        let path = PathBuf::from(&message[start..end]);
+        let key = path.to_string_lossy().to_ascii_lowercase();
+        if seen.insert(key) {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
+fn supported_context_extension_end(message: &str, start: usize) -> Option<usize> {
+    const EXTENSIONS: &[&str] = &[
+        ".docx", ".docm", ".pptx", ".pptm", ".xlsx", ".xlsm", ".xlsb", ".pdf", ".epub", ".mobi",
+        ".odt", ".rtf", ".mdx", ".txt", ".org", ".doc", ".ppt", ".xls", ".ods", ".odp", ".md",
+        ".csv", ".tsv",
+    ];
+    EXTENSIONS
+        .iter()
+        .filter_map(|extension| {
+            message[start..]
+                .find(extension)
+                .map(|index| start + index + extension.len())
+        })
+        .filter(|end| {
+            !message
+                .as_bytes()
+                .get(*end)
+                .is_some_and(u8::is_ascii_alphanumeric)
+        })
+        .min()
+}
+
 fn read_trimmed(path: impl AsRef<Path>, max_chars: usize) -> Option<String> {
     let raw = fs::read_to_string(path).ok()?;
     let trimmed = raw.trim();
@@ -366,6 +441,7 @@ pub fn intent_label(intent: QueryIntent) -> &'static str {
         QueryIntent::NeedsInternalSearch => "internal_search",
         QueryIntent::NeedsExternalSearch => "external_search",
         QueryIntent::NeedsRawSourceSearch => "raw_source_search",
+        QueryIntent::NeedsSourceImport => "source_import",
         QueryIntent::NeedsGraph => "graph",
         QueryIntent::NeedsWrite => "write",
         QueryIntent::SimpleConversational => "conversation",
@@ -453,6 +529,36 @@ mod tests {
         );
         assert_eq!(files[0].1, "selected evidence");
         assert!(files[1].1.starts_with("[Image: figure.png"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn user_referenced_host_paths_accept_a_windows_docx_path() {
+        let message = "请整理 E:\\山竹智能体-Windows-售后手动配置与验收手册.docx 的内容";
+
+        assert_eq!(
+            user_referenced_host_paths(message),
+            vec![PathBuf::from(
+                "E:\\山竹智能体-Windows-售后手动配置与验收手册.docx"
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn user_referenced_host_files_are_attached_as_context() {
+        let root =
+            std::env::temp_dir().join(format!("llm-wiki-user-context-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("evidence.txt");
+        fs::write(&file, "directly selected evidence").unwrap();
+
+        let files =
+            load_user_referenced_context_files(&format!("请使用这个资料：{}", file.display()))
+                .await;
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].1, "directly selected evidence");
         let _ = fs::remove_dir_all(root);
     }
 

@@ -55,7 +55,7 @@ function TreeNode({
           <span className="truncate">{node.name}</span>
           {loadingChildren && (
             <span className="ml-auto pr-2 text-[10px] text-muted-foreground">
-              {t("common.loading", { defaultValue: "Loading..." })}
+              {t("common.loading", { defaultValue: "加载中……" })}
             </span>
           )}
         </button>
@@ -109,11 +109,11 @@ export function FileTree() {
       console.error("[FileTree] open project folder failed:", err)
       await message(
         t("fileTree.openProjectFolderFailed", {
-          defaultValue: "Failed to open the project folder.",
+          defaultValue: "打开项目目录失败。",
         }),
         {
           title: t("fileTree.openProjectFolder", {
-            defaultValue: "Open project folder",
+            defaultValue: "打开项目目录",
           }),
           kind: "error",
         },
@@ -177,7 +177,7 @@ export function FileTree() {
         >
           <FolderOpen className="h-3.5 w-3.5 shrink-0" />
           <span className="truncate">
-            {t("fileTree.openProjectFolder", { defaultValue: "Open project folder" })}
+            {t("fileTree.openProjectFolder", { defaultValue: "打开项目目录" })}
           </span>
         </button>
       </div>

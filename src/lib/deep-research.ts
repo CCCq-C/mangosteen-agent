@@ -1,4 +1,3 @@
-import { anyTxtSearchSmart, hasConfiguredAnyTxt } from "./anytxt-search"
 import { hasConfiguredSearchProvider, resolveSearchConfig, webSearch } from "./web-search"
 import { streamChat } from "./llm-client"
 import { currentWikiDate } from "./ingest"
@@ -11,6 +10,8 @@ import { makeQueryFileName } from "@/lib/wiki-filename"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { useReviewStore } from "@/stores/review-store"
 import { stripBodyWikilinkPathPrefixes } from "./page-merge"
+import { getTaskLlmConfig } from "./llm-task-routing"
+import { optimizeResearchTopic } from "./optimize-research-topic"
 
 const MAX_RESEARCH_SOURCES = 20
 const MIN_RESEARCH_CONTENT_CHARS = 120
@@ -33,17 +34,17 @@ export function buildResearchPageContent(
   return stripBodyWikilinkPathPrefixes([
     "---",
     "type: query",
-    `title: ${JSON.stringify(`Research: ${displayTopic}`)}`,
+    `title: ${JSON.stringify(`专题研究：${displayTopic}`)}`,
     `created: ${date}`,
     "origin: deep-research",
     "tags: [research]",
     "---",
     "",
-    `# Research: ${displayTopic}`,
+    `# 专题研究：${displayTopic}`,
     "",
     synthesis,
     "",
-    "## References",
+    "## 参考资料",
     "",
     references,
     "",
@@ -81,11 +82,6 @@ export function researchPageIdFromPath(filePath: string): string {
 
 interface ResearchSourceDeps {
   webSearch: typeof webSearch
-  anyTxtSearch: typeof anyTxtSearchSmart
-}
-
-interface CollectResearchSourceOptions {
-  llmConfig?: LlmConfig
 }
 
 interface ResearchSourceCollection {
@@ -110,7 +106,7 @@ export function noResearchSourcesTaskPatch(sourceErrors: string[]): {
   }
   return {
     status: "done",
-    synthesis: "No research sources found.",
+    synthesis: "没有找到可用的研究资料。",
     error: null,
   }
 }
@@ -187,7 +183,7 @@ export function validateResearchSynthesis(
       valid: false,
       cleaned,
       citedSourceIndexes,
-      error: "The research synthesis was empty or incomplete. Please retry.",
+      error: "研究结果为空或不完整，请重试。",
     }
   }
   if (sourceCount > 0 && citedSourceIndexes.length === 0) {
@@ -195,7 +191,7 @@ export function validateResearchSynthesis(
       valid: false,
       cleaned,
       citedSourceIndexes,
-      error: "The research synthesis did not cite any collected sources. Please retry.",
+      error: "研究结果没有引用任何搜索来源，请重试。",
     }
   }
   return { valid: true, cleaned, citedSourceIndexes, error: null }
@@ -207,8 +203,6 @@ export function validateResearchSynthesis(
 export function queueResearch(
   projectPath: string,
   topic: string,
-  llmConfig: LlmConfig,
-  searchConfig: SearchApiConfig,
   searchQueries?: string[],
   sourceReviewId?: string,
 ): string {
@@ -223,7 +217,7 @@ export function queueResearch(
   store.setPanelOpen(true)
   // Start processing on next tick to ensure React has rendered the panel
   setTimeout(() => {
-    processQueue(projectPath, llmConfig, searchConfig)
+    processQueue(projectPath)
   }, 50)
   return taskId
 }
@@ -238,8 +232,6 @@ export interface ResearchBatchInput {
 export function queueResearchBatch(
   projectPath: string,
   inputs: ResearchBatchInput[],
-  llmConfig: LlmConfig,
-  searchConfig: SearchApiConfig,
 ): string[] {
   const normalized = inputs
     .map((input) => ({ ...input, topic: input.topic.trim() }))
@@ -247,8 +239,33 @@ export function queueResearchBatch(
   if (normalized.length === 0) return []
 
   const ids = useResearchStore.getState().addTasks(normalized)
-  setTimeout(() => processQueue(projectPath, llmConfig, searchConfig), 50)
+  setTimeout(() => processQueue(projectPath), 50)
   return ids
+}
+
+export function getDeepResearchRuntimeConfig(): {
+  llmConfig: LlmConfig
+  searchConfig: SearchApiConfig
+} {
+  return {
+    llmConfig: getTaskLlmConfig("chat"),
+    searchConfig: useWikiStore.getState().searchApiConfig,
+  }
+}
+
+export async function resolveResearchQueries(
+  topic: string,
+  existingQueries: string[] | undefined,
+  llmConfig: LlmConfig,
+  optimize: typeof optimizeResearchTopic = optimizeResearchTopic,
+): Promise<string[]> {
+  if (existingQueries && existingQueries.length > 0) return existingQueries
+  try {
+    const result = await optimize(llmConfig, topic, "", "user-request", "", "")
+    return result.searchQueries.length > 0 ? result.searchQueries : [topic]
+  } catch {
+    return [topic]
+  }
 }
 
 export function resolveReviewForSavedResearch(
@@ -266,21 +283,17 @@ export function resolveReviewForSavedResearch(
   ) return false
   const review = useReviewStore.getState().items.find((item) => item.id === task.sourceReviewId)
   if (!review || review.resolved) return false
-  useReviewStore.getState().resolveItem(task.sourceReviewId, `Research saved: ${savedPath}`)
+  useReviewStore.getState().resolveItem(task.sourceReviewId, `专题研究已保存：${savedPath}`)
   return true
 }
 
 export async function collectResearchSources(
   queries: string[],
   searchConfig: SearchApiConfig,
-  projectPath: string,
-  deps: ResearchSourceDeps = { webSearch, anyTxtSearch: anyTxtSearchSmart },
-  options: CollectResearchSourceOptions = {},
+  _projectPath: string,
+  deps: ResearchSourceDeps = { webSearch },
 ): Promise<ResearchSourceCollection> {
   const resolvedSearchConfig = resolveSearchConfig(searchConfig)
-  const sourceMode = resolvedSearchConfig.deepResearchSource ?? "web"
-  const useWeb = sourceMode === "web" || sourceMode === "both"
-  const useAnyTxt = hasAnyTxtSource(resolvedSearchConfig) && hasConfiguredAnyTxt(resolvedSearchConfig.anyTxt)
   const webConfigured = hasConfiguredSearchProvider(resolvedSearchConfig)
   const allResults: import("./web-search").WebSearchResult[] = []
   const errors: string[] = []
@@ -308,12 +321,9 @@ export async function collectResearchSources(
   const calls: Array<Promise<{ results: import("./web-search").WebSearchResult[] }>> = []
 
   for (const webQuery of webQueries) {
-    if (useWeb && webConfigured && webQuery) {
+    if (webConfigured && webQuery) {
       calls.push(deps.webSearch(webQuery, resolvedSearchConfig, 5).then((results) => ({ results })))
     }
-  }
-  if (useAnyTxt) {
-    calls.push(deps.anyTxtSearch(queries, resolvedSearchConfig.anyTxt, options.llmConfig, 15, projectPath).then((results) => ({ results })))
   }
 
   const settled = await Promise.allSettled(calls)
@@ -328,11 +338,6 @@ export async function collectResearchSources(
   }
 
   return { results: allResults, errors }
-}
-
-function hasAnyTxtSource(searchConfig: SearchApiConfig): boolean {
-  const sourceMode = searchConfig.deepResearchSource ?? "web"
-  return sourceMode === "anytxt" || sourceMode === "both"
 }
 
 function isActiveProjectPath(projectPath: string): boolean {
@@ -353,11 +358,7 @@ function updateTaskIfActive(
 /**
  * Process queued tasks up to maxConcurrent limit.
  */
-function processQueue(
-  projectPath: string,
-  llmConfig: LlmConfig,
-  searchConfig: SearchApiConfig,
-) {
+function processQueue(projectPath: string) {
   const store = useResearchStore.getState()
   const running = store.getRunningCount()
   const available = store.maxConcurrent - running
@@ -365,7 +366,7 @@ function processQueue(
   for (let i = 0; i < available; i++) {
     const next = useResearchStore.getState().getNextQueued()
     if (!next) break
-    executeResearch(projectPath, next.id, next.topic, llmConfig, searchConfig)
+    executeResearch(projectPath, next.id, next.topic)
   }
 }
 
@@ -373,27 +374,26 @@ async function executeResearch(
   projectPath: string,
   taskId: string,
   topic: string,
-  llmConfig: LlmConfig,
-  searchConfig: SearchApiConfig,
 ) {
   const pp = normalizePath(projectPath)
+  const { llmConfig, searchConfig } = getDeepResearchRuntimeConfig()
 
   try {
     if (!isActiveProjectPath(pp)) return
-    // Step 1: gather research sources — use multiple queries if available,
-    // merge Web Search and local AnyTXT results, then deduplicate.
+    // Step 1: gather and deduplicate web research sources.
     if (!updateTaskIfActive(pp, taskId, { status: "searching" })) return
 
     const task = useResearchStore.getState().tasks.find((t) => t.id === taskId)
-    const queries = task?.searchQueries && task.searchQueries.length > 0
-      ? task.searchQueries
-      : [topic]
+    const queries = await resolveResearchQueries(topic, task?.searchQueries, llmConfig)
+    if (!isActiveProjectPath(pp)) return
+    if (!task?.searchQueries?.length) {
+      if (!updateTaskIfActive(pp, taskId, { searchQueries: queries })) return
+    }
     const { results: allResults, errors: sourceErrors } = await collectResearchSources(
       queries,
       searchConfig,
       pp,
-      { webSearch, anyTxtSearch: anyTxtSearchSmart },
-      { llmConfig },
+      { webSearch },
     )
     if (!isActiveProjectPath(pp)) return
 
@@ -402,7 +402,7 @@ async function executeResearch(
 
     if (webResults.length === 0) {
       if (!updateTaskIfActive(pp, taskId, noResearchSourcesTaskPatch(sourceErrors))) return
-      if (isActiveProjectPath(pp)) onTaskFinished(pp, llmConfig, searchConfig)
+      if (isActiveProjectPath(pp)) onTaskFinished(pp)
       return
     }
 
@@ -470,7 +470,7 @@ async function executeResearch(
 
     // Check if errored during streaming
     if (useResearchStore.getState().tasks.find((t) => t.id === taskId)?.status === "error") {
-      if (isActiveProjectPath(pp)) onTaskFinished(pp, llmConfig, searchConfig)
+      if (isActiveProjectPath(pp)) onTaskFinished(pp)
       return
     }
     if (!isActiveProjectPath(pp)) return
@@ -485,7 +485,7 @@ async function executeResearch(
         synthesis: validation.cleaned,
         error: validation.error,
       })) return
-      if (isActiveProjectPath(pp)) onTaskFinished(pp, llmConfig, searchConfig)
+      if (isActiveProjectPath(pp)) onTaskFinished(pp)
       return
     }
     if (!updateTaskIfActive(pp, taskId, { status: "saving", synthesis: validation.cleaned })) return
@@ -551,14 +551,10 @@ async function executeResearch(
     })
   }
 
-  if (isActiveProjectPath(pp)) onTaskFinished(pp, llmConfig, searchConfig)
+  if (isActiveProjectPath(pp)) onTaskFinished(pp)
 }
 
-function onTaskFinished(
-  projectPath: string,
-  llmConfig: LlmConfig,
-  searchConfig: SearchApiConfig,
-) {
+function onTaskFinished(projectPath: string) {
   // Process next queued task
-  setTimeout(() => processQueue(projectPath, llmConfig, searchConfig), 100)
+  setTimeout(() => processQueue(projectPath), 100)
 }

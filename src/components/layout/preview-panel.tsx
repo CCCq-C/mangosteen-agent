@@ -52,7 +52,7 @@ export function PreviewPanel() {
       })
       .catch((err) => {
         lastLoadedRef.current = ""
-        setFileContent(`Error loading file: ${err}`)
+        setFileContent(`加载文件失败：${err}`)
       })
   }, [selectedFile, previewContentPath, externalPreview, setFileContent])
 
@@ -94,7 +94,7 @@ export function PreviewPanel() {
   if (!selectedFile) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Select a file to preview
+        请选择要预览的文件
       </div>
     )
   }

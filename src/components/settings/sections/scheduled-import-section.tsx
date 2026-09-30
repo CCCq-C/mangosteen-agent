@@ -28,7 +28,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
     const selected = await open({
       directory: true,
       title: t("settings.sections.scheduledImport.selectDirectory", {
-        defaultValue: "Select Directory to Monitor",
+        defaultValue: "选择要监控的目录",
       }),
     })
 
@@ -52,7 +52,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
 
   const lastScanDate = scheduledImportConfig.lastScan
     ? new Date(scheduledImportConfig.lastScan).toLocaleString()
-    : t("settings.sections.scheduledImport.never", { defaultValue: "Never" })
+    : t("settings.sections.scheduledImport.never", { defaultValue: "从未" })
   const managedPathSelected = Boolean(
     project &&
     draft.scheduledImportPath &&
@@ -67,13 +67,13 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
       <div>
         <h2 className="text-xl font-semibold">
           {t("settings.sections.scheduledImport.title", {
-            defaultValue: "Scheduled Import",
+            defaultValue: "定时导入",
           })}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.scheduledImport.description", {
             defaultValue:
-              "Automatically monitor a directory and import new or modified files at regular intervals.",
+              "自动监控指定目录，按固定间隔导入新增或修改的文件。",
           })}
         </p>
       </div>
@@ -87,7 +87,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
         />
         <span className="text-sm">
           {t("settings.sections.scheduledImport.enable", {
-            defaultValue: "Enable scheduled import",
+            defaultValue: "启用定时导入",
           })}
         </span>
       </label>
@@ -96,7 +96,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
           {t("settings.sections.scheduledImport.privacyNotice", {
             defaultValue:
-              "Files from the selected directory may be copied into this project and sent to your configured LLM during ingest. Removed files are not automatically deleted from the project.",
+              "所选目录中的文件可能会复制到当前项目，并在整理时发送给你配置的大模型。源目录删除文件后，项目内已导入的内容不会自动删除。",
           })}
         </div>
       )}
@@ -104,7 +104,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
       <div className="space-y-2">
         <Label>
           {t("settings.sections.scheduledImport.directory", {
-            defaultValue: "Monitor Directory",
+            defaultValue: "监控目录",
           })}
         </Label>
         <div className="flex gap-2">
@@ -121,7 +121,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
             onClick={handleSelectDirectory}
             disabled={!draft.scheduledImportEnabled}
             title={t("settings.sections.scheduledImport.browse", {
-              defaultValue: "Browse",
+              defaultValue: "浏览",
             })}
           >
             <Folder className="h-4 w-4" />
@@ -130,14 +130,14 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
         <p className="text-xs text-muted-foreground">
           {t("settings.sections.scheduledImport.directoryHelp", {
             defaultValue:
-              "Choose an external folder outside the current LLM Wiki project. Project folders are already handled by source folder monitoring.",
+              "请选择当前知识库项目之外的外部文件夹。项目内部资料已经由资料文件夹监控负责。",
           })}
         </p>
         {managedPathSelected && (
           <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
             {t("settings.sections.scheduledImport.managedPathWarning", {
               defaultValue:
-                "This path is inside the current LLM Wiki project and is already managed by source folder monitoring. Pick an external folder to avoid duplicate scans.",
+                "此路径位于当前知识库项目内部，已经由资料文件夹监控负责。请选择外部文件夹，避免重复扫描。",
             })}
           </p>
         )}
@@ -146,7 +146,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
       <div className="space-y-2">
         <Label htmlFor="scheduled-import-interval">
           {t("settings.sections.scheduledImport.interval", {
-            defaultValue: "Scan Interval (minutes)",
+            defaultValue: "扫描间隔（分钟）",
           })}
         </Label>
         <Input
@@ -166,7 +166,7 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
         />
         <p className="text-xs text-muted-foreground">
           {t("settings.sections.scheduledImport.intervalHelp", {
-            defaultValue: "How often to check for changes. Minimum: 1 minute.",
+            defaultValue: "检查文件变化的频率，最短为 1 分钟。",
           })}
         </p>
       </div>
@@ -184,13 +184,13 @@ export function ScheduledImportSection({ draft, setDraft }: Props) {
             <Play className="mr-2 h-4 w-4" />
           )}
           {isScanning
-            ? t("settings.sections.scheduledImport.scanning", { defaultValue: "Scanning..." })
-            : t("settings.sections.scheduledImport.scanNow", { defaultValue: "Scan Now" })}
+            ? t("settings.sections.scheduledImport.scanning", { defaultValue: "扫描中……" })
+            : t("settings.sections.scheduledImport.scanNow", { defaultValue: "立即扫描" })}
         </Button>
 
         <span className="text-xs text-muted-foreground">
           {t("settings.sections.scheduledImport.lastScan", {
-            defaultValue: "Last scan: {{time}}",
+            defaultValue: "上次扫描：{{time}}",
             time: lastScanDate,
           })}
         </span>

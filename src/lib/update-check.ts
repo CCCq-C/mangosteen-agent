@@ -151,7 +151,7 @@ export async function checkForUpdates(opts: {
     return {
       kind: "error",
       local: currentVersion,
-      message: "Could not reach GitHub Releases API.",
+      message: "无法连接 GitHub 版本更新服务。",
     }
   }
   const remote = release.tag_name

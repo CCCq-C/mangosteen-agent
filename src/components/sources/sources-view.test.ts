@@ -43,7 +43,12 @@ describe("filterSourceTreeByQuery", () => {
 describe("summarizeImportOutcome", () => {
   it("stays silent when every selected file was imported", () => {
     expect(
-      summarizeImportOutcome({ imported: ["/project/raw/sources/a.md"], skipped: [] }, null),
+      summarizeImportOutcome({
+        imported: ["/project/raw/sources/a.md"],
+        skipped: [],
+        ingestStatus: "queued",
+        ingestTaskIds: ["task-1"],
+      }, null),
     ).toBeNull()
   })
 
@@ -53,6 +58,8 @@ describe("summarizeImportOutcome", () => {
         {
           imported: ["/project/raw/sources/a.md"],
           skipped: [{ name: "審查資料範例.pdf", reason: "too-large", detail: "142.8 MB" }],
+          ingestStatus: "queued",
+          ingestTaskIds: ["task-1"],
         },
         null,
       ),
@@ -75,11 +82,32 @@ describe("summarizeImportOutcome", () => {
 
   it("reports nothing imported when the picker yielded no usable file", () => {
     expect(
-      summarizeImportOutcome({ imported: [], skipped: [{ name: "a.py", reason: "unsupported-type" }] }, null),
+      summarizeImportOutcome({
+        imported: [],
+        skipped: [{ name: "a.py", reason: "unsupported-type" }],
+        ingestStatus: "not-started",
+        ingestTaskIds: [],
+      }, null),
     ).toEqual({
       importedCount: 0,
       skipped: [{ name: "a.py", reason: "unsupported-type" }],
       error: null,
+    })
+  })
+
+  it("surfaces an ingest error even though the source file was copied", () => {
+    expect(
+      summarizeImportOutcome({
+        imported: ["/project/raw/sources/a.pdf"],
+        skipped: [],
+        ingestStatus: "saved-only",
+        ingestTaskIds: [],
+        ingestError: "无法保存整理队列",
+      }, null),
+    ).toEqual({
+      importedCount: 1,
+      skipped: [],
+      error: "无法保存整理队列",
     })
   })
 })

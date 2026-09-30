@@ -18,7 +18,6 @@ use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
 use walkdir::WalkDir;
 
-use crate::commands::external_search::file_url_for_path;
 use crate::commands::search::{self, SearchEmbeddingConfig};
 
 use super::types::{AgentKnowledgeContext, AgentReference, AgentVersionSummary};
@@ -44,9 +43,6 @@ const MAX_SHELL_COMMAND_CHARS: usize = 4_000;
 const MAX_SHELL_OUTPUT_CHARS: usize = 20_000;
 const MAX_SHELL_GENERATED_FILES: usize = 50;
 const SHELL_OUTPUT_DRAIN_TIMEOUT_SECS: u64 = 1;
-const DEFAULT_ANYTXT_ENDPOINT: &str = "http://127.0.0.1:9920";
-const DEFAULT_ANYTXT_LIMIT: usize = 20;
-const ANYTXT_LAST_MODIFY_END: i64 = 2_147_483_647;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -95,7 +91,6 @@ pub struct ToolContext<'a> {
     pub project_path: &'a str,
     pub embedding_config: Option<SearchEmbeddingConfig>,
     pub web_search_config: Option<WebSearchConfig>,
-    pub anytxt_config: Option<AnyTxtConfig>,
 }
 
 impl ToolRegistry for BuiltinToolRegistry {
@@ -245,13 +240,6 @@ impl ToolRegistry for BuiltinToolRegistry {
                     )
                     .map_err(|err| format!("Failed to serialize web.search result: {err}"))
                 }
-                "anytxt.search" => {
-                    let query = tool_query(&input, "anytxt.search")?;
-                    serde_json::to_value(
-                        run_anytxt_search(query, context.anytxt_config, tool_top_k(&input)).await?,
-                    )
-                    .map_err(|err| format!("Failed to serialize anytxt.search result: {err}"))
-                }
                 "deep_research.run" => {
                     let query = tool_query(&input, "deep_research.run")?;
                     serde_json::to_value(json!({
@@ -360,21 +348,6 @@ pub struct WebSearchProviderOverride {
     pub sear_xng_categories: Option<Vec<String>>,
     #[serde(default)]
     pub serp_api_engine: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct AnyTxtConfig {
-    #[serde(default)]
-    pub enabled: Option<bool>,
-    #[serde(default)]
-    pub endpoint: Option<String>,
-    #[serde(default)]
-    pub filter_dir: Option<String>,
-    #[serde(default)]
-    pub filter_ext: Option<String>,
-    #[serde(default)]
-    pub limit: Option<usize>,
 }
 
 impl WebSearchConfig {
@@ -488,19 +461,6 @@ pub fn builtin_tool_specs() -> Vec<ToolSpec> {
             })),
         },
         ToolSpec {
-            name: "anytxt.search".to_string(),
-            description: "Search files indexed by an AnyTXT JSON-RPC service.".to_string(),
-            effects: vec![ToolEffect::Network, ToolEffect::Read],
-            parameters: Some(serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "query": { "type": "string" },
-                    "topK": { "type": "integer", "minimum": 1, "maximum": 10 }
-                },
-                "required": ["query"]
-            })),
-        },
-        ToolSpec {
             name: "deep_research.run".to_string(),
             description:
                 "Collect broader external/local evidence for deep research turns before synthesis."
@@ -512,7 +472,7 @@ pub fn builtin_tool_specs() -> Vec<ToolSpec> {
                     "query": { "type": "string" },
                     "sources": {
                         "type": "array",
-                        "items": { "enum": ["web", "anytxt", "wiki", "source"] }
+                        "items": { "enum": ["web", "wiki", "source"] }
                     }
                 },
                 "required": ["query"]
@@ -1171,20 +1131,18 @@ pub async fn run_web_search(
         return Ok(Vec::new());
     }
     let Some(config) = config else {
-        return Err(
-            "Web search is enabled for this turn but no search provider is configured.".to_string(),
-        );
+        return Err("本次对话已开启网页搜索，但尚未配置搜索服务。".to_string());
     };
     let config = config.resolved();
     let provider = config.provider.trim().to_ascii_lowercase();
     if provider.is_empty() || provider == "none" {
-        return Err("Web search provider is not configured.".to_string());
+        return Err("尚未配置网页搜索服务。".to_string());
     }
     let max_results = web_search_result_limit(&provider, top_k);
     let client = crate::proxy::configure_http_client(reqwest::Client::builder())
         .timeout(std::time::Duration::from_secs(WEB_SEARCH_TIMEOUT_SECS))
         .build()
-        .map_err(|err| format!("Failed to build web search client: {err}"))?;
+        .map_err(|err| format!("无法创建网页搜索连接：{err}"))?;
     let raw = match provider.as_str() {
         "firecrawl" => firecrawl_search(&client, query, &config, max_results).await?,
         "searxng" => searxng_search(&client, query, &config, max_results).await?,
@@ -1193,11 +1151,7 @@ pub async fn run_web_search(
         "brave" => brave_search(&client, query, &config, max_results).await?,
         "bocha" => bocha_search(&client, query, &config, max_results).await?,
         "serpapi" => serpapi_search(&client, query, &config, max_results).await?,
-        other => {
-            return Err(format!(
-                "Web search provider '{other}' is not supported by the Rust Agent yet"
-            ))
-        }
+        other => return Err(format!("当前智能体尚不支持网页搜索服务“{other}”")),
     };
     Ok(web_items_to_references(raw, max_results))
 }
@@ -1207,393 +1161,6 @@ fn web_search_result_limit(provider: &str, requested: usize) -> usize {
     // 20-result ceiling so adding Bocha cannot increase their request cost.
     let provider_max = if provider == "bocha" { 50 } else { 20 };
     requested.clamp(1, provider_max)
-}
-
-pub async fn run_anytxt_search(
-    query: &str,
-    config: Option<AnyTxtConfig>,
-    top_k: usize,
-) -> Result<Vec<AgentReference>, String> {
-    let query = query.trim();
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-    let config = config.unwrap_or_default();
-    if config.enabled == Some(false) {
-        return Ok(Vec::new());
-    }
-    let endpoint = config
-        .endpoint
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(DEFAULT_ANYTXT_ENDPOINT)
-        .trim()
-        .trim_end_matches('/');
-    let endpoint = normalize_anytxt_endpoint(endpoint);
-    let limit = top_k
-        .clamp(1, 100)
-        .min(config.limit.unwrap_or(DEFAULT_ANYTXT_LIMIT).clamp(1, 100));
-    // AnyTXT has its own query syntax. The caller may already have rewritten
-    // natural language into keyword form, so do not run the source-search
-    // tokenizer here; pass the pattern through unchanged.
-    let pattern = query.to_string();
-    let filter_dir = config.filter_dir.unwrap_or_default();
-    let filter_ext = config
-        .filter_ext
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "*".to_string());
-    let client = crate::proxy::configure_http_client(reqwest::Client::builder())
-        .timeout(std::time::Duration::from_secs(WEB_SEARCH_TIMEOUT_SECS))
-        .build()
-        .map_err(|err| format!("Failed to build AnyTXT client: {err}"))?;
-    let mut input = json!({
-        "pattern": pattern,
-        "filterExt": filter_ext,
-        "lastModifyBegin": 0,
-        "lastModifyEnd": ANYTXT_LAST_MODIFY_END,
-        "limit": limit.to_string(),
-        "offset": 0,
-        "order": 0
-    });
-    if !filter_dir.trim().is_empty() {
-        input["filterDir"] = Value::String(filter_dir);
-    }
-    let response = client
-        .post(&endpoint)
-        .header("Accept", "application/json")
-        .json(&json!({
-            "id": 1,
-            "jsonrpc": "2.0",
-            "method": "ATRpcServer.Searcher.V1.GetResult",
-            "params": { "input": input }
-        }))
-        .send()
-        .await
-        .map_err(|err| {
-            format!("AnyTXT search failed. Check that ATGUI.exe or the AnyTXT service is running at {endpoint}: {err}")
-        })?;
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|err| format!("Failed to read AnyTXT response: {err}"))?;
-    if !status.is_success() {
-        return Err(format!("AnyTXT HTTP {status}: {}", trim_text(&text, 300)));
-    }
-    let value: Value = serde_json::from_str(&text)
-        .map_err(|_| format!("AnyTXT returned invalid JSON: {}", trim_text(&text, 300)))?;
-    if let Some(error) = value.get("error") {
-        return Err(format!(
-            "AnyTXT error: {}",
-            trim_text(&error.to_string(), 300)
-        ));
-    }
-    let mut references = Vec::new();
-    for item in extract_anytxt_items(&value).into_iter().take(limit) {
-        let fragment = if !item.fid.trim().is_empty() {
-            get_anytxt_fragment(&client, &endpoint, &item.fid, &pattern)
-                .await
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-        references.push(AgentReference {
-            title: item.title,
-            path: file_url_for_path(&item.path),
-            kind: "anytxt".to_string(),
-            snippet: Some(trim_text(
-                if fragment.trim().is_empty() {
-                    &item.snippet
-                } else {
-                    &fragment
-                },
-                1200,
-            ))
-            .filter(|s| !s.trim().is_empty()),
-            score: None,
-            knowledge_context: None,
-        });
-    }
-    Ok(references)
-}
-
-#[derive(Debug, Clone)]
-struct AnyTxtItem {
-    fid: String,
-    title: String,
-    path: String,
-    snippet: String,
-}
-
-fn extract_anytxt_items(value: &Value) -> Vec<AnyTxtItem> {
-    let result = value.get("result").unwrap_or(value);
-    let candidates = first_anytxt_array(
-        result,
-        &[
-            &[][..],
-            &["items"],
-            &["files"],
-            &["results"],
-            &["list"],
-            &["value"],
-            &["data"],
-            &["output"],
-            &["output", "items"],
-            &["output", "files"],
-            &["output", "results"],
-            &["output", "list"],
-            &["output", "value"],
-            &["output", "data"],
-            &["data", "items"],
-            &["data", "files"],
-            &["data", "results"],
-            &["data", "list"],
-            &["data", "value"],
-            &["data", "output"],
-            &["data", "output", "items"],
-            &["data", "output", "files"],
-            &["data", "output", "results"],
-            &["data", "output", "list"],
-            &["data", "output", "value"],
-        ],
-    )
-    .unwrap_or_default();
-    let fields = first_anytxt_fields(
-        result,
-        &[
-            &["field"][..],
-            &["fields"],
-            &["output", "field"],
-            &["output", "fields"],
-            &["data", "field"],
-            &["data", "fields"],
-            &["data", "output", "field"],
-            &["data", "output", "fields"],
-        ],
-    )
-    .unwrap_or_default();
-    candidates
-        .into_iter()
-        .filter_map(|item| {
-            let record = normalize_anytxt_record(item, &fields);
-            let fid = string_field(&record, &["fid", "id", "fileId", "file_id"]);
-            let raw_path = string_field(
-                &record,
-                &[
-                    "path",
-                    "file",
-                    "filePath",
-                    "file_path",
-                    "fullPath",
-                    "full_path",
-                    "filename",
-                    "fileName",
-                    "name",
-                ],
-            );
-            let path = if raw_path.is_empty() && !fid.is_empty() {
-                format!("anytxt://{fid}")
-            } else {
-                raw_path
-            };
-            let title = string_field(&record, &["title", "name", "fileName", "filename"])
-                .trim()
-                .to_string();
-            let title = if title.is_empty() {
-                Path::new(&path)
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .filter(|value| !value.trim().is_empty())
-                    .unwrap_or("AnyTXT result")
-                    .to_string()
-            } else {
-                title
-            };
-            let snippet = string_field(
-                &record,
-                &[
-                    "snippet",
-                    "fragment",
-                    "content",
-                    "contents",
-                    "text",
-                    "summary",
-                    "highlight",
-                    "hitText",
-                    "hit_text",
-                ],
-            );
-            if path.is_empty() && snippet.is_empty() {
-                None
-            } else {
-                Some(AnyTxtItem {
-                    fid,
-                    title,
-                    path,
-                    snippet,
-                })
-            }
-        })
-        .collect()
-}
-
-fn first_anytxt_array(value: &Value, paths: &[&[&str]]) -> Option<Vec<Value>> {
-    for path in paths {
-        let Some(candidate) = value_at_path(value, path) else {
-            continue;
-        };
-        if let Some(items) = candidate.as_array() {
-            return Some(items.clone());
-        }
-    }
-    None
-}
-
-fn first_anytxt_fields(value: &Value, paths: &[&[&str]]) -> Option<Vec<String>> {
-    for path in paths {
-        let Some(candidate) = value_at_path(value, path) else {
-            continue;
-        };
-        let Some(items) = candidate.as_array() else {
-            continue;
-        };
-        let fields = items
-            .iter()
-            .filter_map(Value::as_str)
-            .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
-        if !fields.is_empty() {
-            return Some(fields);
-        }
-    }
-    None
-}
-
-fn value_at_path<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
-    let mut current = value;
-    for key in path {
-        current = current.get(*key)?;
-    }
-    Some(current)
-}
-
-fn normalize_anytxt_record(item: Value, fields: &[String]) -> serde_json::Map<String, Value> {
-    match item {
-        Value::Object(object) => object,
-        Value::Array(row) if !fields.is_empty() => fields
-            .iter()
-            .cloned()
-            .zip(row)
-            .collect::<serde_json::Map<String, Value>>(),
-        other => {
-            let mut object = serde_json::Map::new();
-            object.insert("text".to_string(), other);
-            object
-        }
-    }
-}
-
-fn string_field(record: &serde_json::Map<String, Value>, keys: &[&str]) -> String {
-    for key in keys {
-        let Some(value) = record.get(*key) else {
-            continue;
-        };
-        if let Some(text) = value.as_str().filter(|text| !text.trim().is_empty()) {
-            return text.trim().to_string();
-        }
-        if let Some(number) = value.as_i64() {
-            return number.to_string();
-        }
-        if let Some(number) = value.as_u64() {
-            return number.to_string();
-        }
-    }
-    String::new()
-}
-
-async fn get_anytxt_fragment(
-    client: &reqwest::Client,
-    endpoint: &str,
-    fid: &str,
-    pattern: &str,
-) -> Result<String, String> {
-    let response = client
-        .post(endpoint)
-        .header("Accept", "application/json")
-        .json(&json!({
-            "id": 2,
-            "jsonrpc": "2.0",
-            "method": "ATRpcServer.Searcher.V1.GetFragment",
-            "params": { "input": { "fid": fid, "pattern": pattern } }
-        }))
-        .send()
-        .await
-        .map_err(|err| format!("AnyTXT fragment failed: {err}"))?;
-    let status = response.status();
-    let text = response
-        .text()
-        .await
-        .map_err(|err| format!("Failed to read AnyTXT fragment response: {err}"))?;
-    if !status.is_success() {
-        return Err(format!(
-            "AnyTXT fragment HTTP {status}: {}",
-            trim_text(&text, 300)
-        ));
-    }
-    let value: Value = serde_json::from_str(&text).map_err(|_| {
-        format!(
-            "AnyTXT fragment returned invalid JSON: {}",
-            trim_text(&text, 300)
-        )
-    })?;
-    if let Some(error) = value.get("error") {
-        return Err(format!(
-            "AnyTXT fragment error: {}",
-            trim_text(&error.to_string(), 300)
-        ));
-    }
-    Ok(extract_anytxt_fragment_text(
-        value.get("result").unwrap_or(&Value::Null),
-    ))
-}
-
-fn extract_anytxt_fragment_text(value: &Value) -> String {
-    if let Some(text) = value.as_str() {
-        return text.to_string();
-    }
-    if let Some(items) = value.as_array() {
-        return items
-            .iter()
-            .map(extract_anytxt_fragment_text)
-            .filter(|item| !item.trim().is_empty())
-            .collect::<Vec<_>>()
-            .join("\n\n");
-    }
-    let Some(object) = value.as_object() else {
-        return String::new();
-    };
-    for key in ["text", "fragment", "content", "snippet", "html"] {
-        if let Some(text) = object.get(key).and_then(Value::as_str) {
-            return text.to_string();
-        }
-    }
-    for key in ["output", "result", "data", "fragments", "items", "list"] {
-        if let Some(next) = object.get(key) {
-            let text = extract_anytxt_fragment_text(next);
-            if !text.trim().is_empty() {
-                return text;
-            }
-        }
-    }
-    String::new()
-}
-
-fn normalize_anytxt_endpoint(value: &str) -> String {
-    if value.starts_with("http://") || value.starts_with("https://") {
-        value.to_string()
-    } else {
-        format!("http://{value}")
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -1631,24 +1198,20 @@ async fn firecrawl_search(
         .json(&json!({ "query": query, "limit": max_results }))
         .send()
         .await
-        .map_err(|err| format!("Network error reaching Firecrawl Search: {err}"))?;
+        .map_err(|err| format!("连接 Firecrawl 搜索时发生网络错误：{err}"))?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|err| format!("Failed to read Firecrawl response: {err}"))?;
-    let parsed: Value = serde_json::from_str(&text).map_err(|_| {
-        format!(
-            "Firecrawl search returned invalid JSON: {}",
-            trim_text(&text, 300)
-        )
-    })?;
+        .map_err(|err| format!("无法读取 Firecrawl 返回内容：{err}"))?;
+    let parsed: Value = serde_json::from_str(&text)
+        .map_err(|_| format!("Firecrawl 搜索返回了无效 JSON：{}", trim_text(&text, 300)))?;
     if !status.is_success() || parsed.get("success").and_then(Value::as_bool) == Some(false) {
         let msg = parsed
             .get("error")
             .and_then(Value::as_str)
             .map(friendly_firecrawl_error)
-            .unwrap_or_else(|| format!("Firecrawl search failed ({status})"));
+            .unwrap_or_else(|| format!("Firecrawl 搜索失败（{status}）"));
         return Err(msg);
     }
     let items = extract_web_items(&parsed, &["data", "results"]);
@@ -1665,7 +1228,7 @@ async fn searxng_search(
         .sear_xng_url
         .as_deref()
         .filter(|v| !v.trim().is_empty())
-        .ok_or_else(|| "SearXNG URL is required for web.search".to_string())?;
+        .ok_or_else(|| "使用网页搜索前需要填写 SearXNG 地址".to_string())?;
     let mut url = normalize_searxng_url(base)?;
     let categories = config
         .sear_xng_categories
@@ -1681,20 +1244,20 @@ async fn searxng_search(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|err| format!("Network error reaching SearXNG: {err}"))?;
+        .map_err(|err| format!("连接 SearXNG 时发生网络错误：{err}"))?;
     let status = response.status();
     let text = response
         .text()
         .await
-        .map_err(|err| format!("Failed to read SearXNG response: {err}"))?;
+        .map_err(|err| format!("无法读取 SearXNG 返回内容：{err}"))?;
     if !status.is_success() {
         return Err(format!(
-            "SearXNG search failed ({status}): {}",
+            "SearXNG 搜索失败（{status}）：{}",
             trim_text(&text, 300)
         ));
     }
     let parsed: Value = serde_json::from_str(&text)
-        .map_err(|_| format!("SearXNG returned invalid JSON: {}", trim_text(&text, 300)))?;
+        .map_err(|_| format!("SearXNG 返回了无效 JSON：{}", trim_text(&text, 300)))?;
     let items = parsed
         .get("results")
         .and_then(Value::as_array)
@@ -1725,7 +1288,7 @@ async fn tavily_search(
         }))
         .send()
         .await
-        .map_err(|err| format!("Network error reaching Tavily: {err}"))?;
+        .map_err(|err| format!("连接 Tavily 时发生网络错误：{err}"))?;
     parse_web_json_response(response, "Tavily", |value| {
         value
             .get("results")
@@ -1764,7 +1327,7 @@ async fn ollama_search(
         }))
         .send()
         .await
-        .map_err(|err| format!("Network error reaching Ollama Web Search: {err}"))?;
+        .map_err(|err| format!("连接 Ollama 网页搜索时发生网络错误：{err}"))?;
     parse_web_json_response(response, "Ollama Web Search", |value| {
         value
             .get("results")
@@ -1796,7 +1359,7 @@ async fn brave_search(
         .header("X-Subscription-Token", key)
         .send()
         .await
-        .map_err(|err| format!("Network error reaching Brave Search: {err}"))?;
+        .map_err(|err| format!("连接 Brave Search 时发生网络错误：{err}"))?;
     parse_web_json_response(response, "Brave Search", |value| {
         value
             .get("web")
@@ -1830,7 +1393,7 @@ async fn bocha_search(
         }))
         .send()
         .await
-        .map_err(|err| format!("Network error reaching Bocha Search: {err}"))?;
+        .map_err(|err| format!("连接博查搜索时发生网络错误：{err}"))?;
     parse_web_json_response(response, "Bocha Search", parse_bocha_results).await
 }
 
@@ -1846,7 +1409,7 @@ fn parse_bocha_results(value: Value) -> Vec<WebSearchItem> {
             title: item
                 .get("name")
                 .and_then(Value::as_str)
-                .unwrap_or("Untitled")
+                .unwrap_or("无标题")
                 .to_string(),
             url: item
                 .get("url")
@@ -1883,7 +1446,7 @@ async fn serpapi_search(
         .header("Accept", "application/json")
         .send()
         .await
-        .map_err(|err| format!("Network error reaching SerpApi: {err}"))?;
+        .map_err(|err| format!("连接 SerpApi 时发生网络错误：{err}"))?;
     parse_web_json_response(response, "SerpApi", |value| {
         for key in [
             "organic_results",
@@ -1911,21 +1474,17 @@ async fn parse_web_json_response(
     let text = response
         .text()
         .await
-        .map_err(|err| format!("Failed to read {provider} response: {err}"))?;
+        .map_err(|err| format!("无法读取 {provider} 返回内容：{err}"))?;
     if !status.is_success() {
         return Err(format!(
-            "{provider} search failed ({status}): {}",
+            "{provider} 搜索失败（{status}）：{}",
             trim_text(&text, 300)
         ));
     }
-    let value: Value = serde_json::from_str(&text).map_err(|_| {
-        format!(
-            "{provider} returned invalid JSON: {}",
-            trim_text(&text, 300)
-        )
-    })?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|_| format!("{provider} 返回了无效 JSON：{}", trim_text(&text, 300)))?;
     if let Some(error) = value.get("error").and_then(Value::as_str) {
-        return Err(format!("{provider} search failed: {error}"));
+        return Err(format!("{provider} 搜索失败：{error}"));
     }
     if let Some(message) = provider_payload_error(provider, &value) {
         return Err(message);
@@ -1941,16 +1500,16 @@ fn provider_payload_error(provider: &str, value: &Value) -> Option<String> {
                 .get("msg")
                 .and_then(Value::as_str)
                 .filter(|message| !message.trim().is_empty())
-                .unwrap_or("unknown API error");
+                .unwrap_or("未知 API 错误");
             return Some(format!(
-                "{provider} failed (code {}): {message}",
+                "{provider} 请求失败（错误码 {}）：{message}",
                 code.unwrap_or(0)
             ));
         }
     }
     if provider == "Brave Search" && value.get("web").is_none() {
         let message = value.get("message").and_then(Value::as_str)?;
-        return Some(format!("{provider} search failed: {message}"));
+        return Some(format!("{provider} 搜索失败：{message}"));
     }
     None
 }
@@ -1976,7 +1535,7 @@ fn normalize_web_result(value: Value) -> WebSearchItem {
         .get("title")
         .or_else(|| metadata.and_then(|m| m.get("title")))
         .and_then(Value::as_str)
-        .unwrap_or("Untitled")
+        .unwrap_or("无标题")
         .to_string();
     let url = value
         .get("url")
@@ -2044,7 +1603,7 @@ fn required_api_key<'a>(config: &'a WebSearchConfig, provider: &str) -> Result<&
 fn normalize_searxng_url(value: &str) -> Result<String, String> {
     let trimmed = value.trim().trim_end_matches('/');
     if trimmed.is_empty() {
-        return Err("SearXNG URL is required".to_string());
+        return Err("需要填写 SearXNG 地址".to_string());
     }
     let mut url = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
         trimmed.to_string()
@@ -2062,9 +1621,9 @@ fn friendly_firecrawl_error(error: &str) -> String {
         .to_ascii_lowercase()
         .contains("ip address looks suspicious")
     {
-        "Firecrawl Search rejected this IP for key-free access. Add a Firecrawl API key in Settings or choose another Web Search provider.".to_string()
+        "Firecrawl 拒绝了当前 IP 的免密钥访问。请在设置中填写 Firecrawl API 密钥，或改用其他网页搜索服务。".to_string()
     } else {
-        format!("Firecrawl search failed: {error}")
+        format!("Firecrawl 搜索失败：{error}")
     }
 }
 
@@ -2807,7 +2366,6 @@ mod tests {
         assert!(names.contains(&"wiki.read_page".to_string()));
         assert!(names.contains(&"source.search".to_string()));
         assert!(names.contains(&"graph.search".to_string()));
-        assert!(names.contains(&"anytxt.search".to_string()));
         assert!(names.contains(&"wiki.write_page".to_string()));
         assert!(names.contains(&"llm.generate".to_string()));
         assert!(names.contains(&"skills.load".to_string()));
@@ -2882,7 +2440,6 @@ mod tests {
             project_path: root.to_str().unwrap(),
             embedding_config: None,
             web_search_config: None,
-            anytxt_config: None,
         };
         let read = registry
             .execute(
@@ -2912,7 +2469,6 @@ mod tests {
             project_path: root.to_str().unwrap(),
             embedding_config: None,
             web_search_config: None,
-            anytxt_config: None,
         };
         let output = registry
             .execute(
@@ -3489,7 +3045,7 @@ mod tests {
     #[test]
     fn friendly_firecrawl_error_explains_key_free_ip_rejection() {
         let msg = friendly_firecrawl_error("Unfortunately, your IP address looks suspicious");
-        assert!(msg.contains("rejected this IP"));
+        assert!(msg.contains("拒绝了当前 IP"));
     }
 
     #[test]
@@ -3539,7 +3095,7 @@ mod tests {
         let value = json!({ "message": "invalid subscription token" });
         assert_eq!(
             provider_payload_error("Brave Search", &value),
-            Some("Brave Search search failed: invalid subscription token".to_string())
+            Some("Brave Search 搜索失败：invalid subscription token".to_string())
         );
     }
 
@@ -3548,7 +3104,7 @@ mod tests {
         let failure = json!({ "code": 401, "msg": "invalid api key" });
         assert_eq!(
             provider_payload_error("Bocha Search", &failure),
-            Some("Bocha Search failed (code 401): invalid api key".to_string())
+            Some("Bocha Search 请求失败（错误码 401）：invalid api key".to_string())
         );
         assert_eq!(
             provider_payload_error("Bocha Search", &json!({ "code": 200, "data": {} })),
@@ -3648,75 +3204,5 @@ mod tests {
             cfg.sear_xng_url.as_deref(),
             Some("https://search.example.com")
         );
-    }
-
-    #[test]
-    fn extract_anytxt_items_accepts_common_result_shapes() {
-        let value = json!({
-            "result": {
-                "items": [
-                    { "path": "/docs/a.pdf", "title": "A", "snippet": "coal mine" }
-                ]
-            }
-        });
-        let items = extract_anytxt_items(&value);
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].title, "A");
-        assert_eq!(items[0].path, "/docs/a.pdf");
-        assert_eq!(items[0].snippet, "coal mine");
-    }
-
-    #[test]
-    fn extract_anytxt_items_accepts_nested_output_and_field_rows() {
-        let value = json!({
-            "result": {
-                "output": {
-                    "field": ["fid", "full_path", "title", "hitText"],
-                    "items": [
-                        ["42", "/docs/煤矿.pdf", "煤矿资料", "煤矿安全治理片段"]
-                    ]
-                }
-            }
-        });
-        let items = extract_anytxt_items(&value);
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].fid, "42");
-        assert_eq!(items[0].path, "/docs/煤矿.pdf");
-        assert_eq!(items[0].title, "煤矿资料");
-        assert_eq!(items[0].snippet, "煤矿安全治理片段");
-    }
-
-    #[test]
-    fn extract_anytxt_items_keeps_fid_only_results_addressable() {
-        let value = json!({
-            "result": {
-                "data": {
-                    "results": [
-                        { "fid": 99, "snippet": "fragment only" }
-                    ]
-                }
-            }
-        });
-        let items = extract_anytxt_items(&value);
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path, "anytxt://99");
-        assert_eq!(items[0].snippet, "fragment only");
-    }
-
-    #[test]
-    fn extract_anytxt_items_accepts_value_shapes() {
-        let value = json!({
-            "result": {
-                "output": {
-                    "value": [
-                        { "path": "/docs/value.txt", "snippet": "from value" }
-                    ]
-                }
-            }
-        });
-        let items = extract_anytxt_items(&value);
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].path, "/docs/value.txt");
-        assert_eq!(items[0].snippet, "from value");
     }
 }

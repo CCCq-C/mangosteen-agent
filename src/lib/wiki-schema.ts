@@ -77,14 +77,14 @@ export function validateWikiPageRouting(
   const expectedDir = routing.typeDirs[type]
   if (expectedDir && actualDir !== expectedDir) {
     return {
-      message: `Page type "${type}" must be under "${expectedDir}/". Current directory: "${actualDir}".`,
+      message: `“${type}”类型页面必须放在“${expectedDir}/”目录中，当前目录为“${actualDir}”。`,
     }
   }
 
   const typeFromPath = inferTypeFromSchemaPath(normalizedPath, routing)
   if (typeFromPath && typeFromPath !== type) {
     return {
-      message: `Pages under "${actualDir}/" must use type "${typeFromPath}", but found "${type}".`,
+      message: `“${actualDir}/”目录中的页面必须使用“${typeFromPath}”类型，但当前为“${type}”。`,
     }
   }
 

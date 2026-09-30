@@ -1,17 +1,15 @@
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
+import { invoke } from "@tauri-apps/api/core"
 import { useTranslation } from "react-i18next"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   useWikiStore,
-  type AnyTxtConfig,
-  type DeepResearchSource,
   type SearchApiConfig,
   type SearchProvider,
   type SearchProviderOverride,
 } from "@/stores/wiki-store"
-import { normalizeAnyTxtConfig } from "@/lib/anytxt-search"
 import {
   SEARXNG_CATEGORY_OPTIONS,
   SERPAPI_ENGINE_OPTIONS,
@@ -24,65 +22,101 @@ const SEARCH_PROVIDERS = [
   {
     id: "ollama",
     label: "Ollama",
-    hint: "Ollama Web Search API",
-    keyPlaceholder: "Enter your Ollama API key (ollama.com)",
+    hint: "Ollama 官方网页搜索 API",
+    keyPlaceholder: "请输入 Ollama API 密钥（ollama.com）",
     configKind: "key",
   },
   {
     id: "tavily",
     label: "Tavily",
-    hint: "General web search for Deep Research",
-    keyPlaceholder: "Enter your Tavily API key (tavily.com)",
+    hint: "适合专题研究的通用网页搜索",
+    keyPlaceholder: "请输入 Tavily API 密钥（tavily.com）",
     configKind: "key",
   },
   {
     id: "serpapi",
     label: "SerpApi",
-    hint: "Google, Bing, DuckDuckGo, Scholar, News, Images, Videos, YouTube",
-    keyPlaceholder: "Enter your SerpApi API key (serpapi.com)",
+    hint: "支持 Google、Bing、DuckDuckGo、学术、新闻、图片、视频和 YouTube",
+    keyPlaceholder: "请输入 SerpApi API 密钥（serpapi.com）",
     configKind: "key",
   },
   {
     id: "searxng",
     label: "SearXNG",
-    hint: "Self-hosted metasearch via the SearXNG JSON API",
+    hint: "通过 SearXNG JSON API 使用自建聚合搜索",
     urlPlaceholder: "https://search.example.com",
     configKind: "url",
   },
   {
     id: "firecrawl",
     label: "Firecrawl",
-    hint: "Anonymous or authenticated Firecrawl Search API",
+    hint: "支持匿名或 API 密钥认证的 Firecrawl 搜索",
     configKind: "none",
   },
   {
     id: "brave",
     label: "Brave Search",
-    hint: "Independent index with privacy focus (api.search.brave.com)",
-    keyPlaceholder: "Enter your Brave Search API subscription token",
+    hint: "注重隐私的独立搜索索引（api.search.brave.com）",
+    keyPlaceholder: "请输入 Brave Search API 订阅令牌",
     configKind: "key",
   },
   {
     id: "bocha",
-    label: "Bocha Search",
-    hint: "Chinese and global web search via Bocha AI",
-    keyPlaceholder: "Enter your Bocha API key (open.bocha.cn)",
+    label: "博查搜索",
+    hint: "通过博查 AI 搜索中文和全球网页",
+    keyPlaceholder: "请输入博查 API 密钥（open.bocha.cn）",
     configKind: "key",
   },
 ] as const
+
+interface LocalSearchStatus {
+  state: "ready" | "starting" | "stopped"
+  endpoint: string
+  detail: string
+}
 
 export function WebSearchSection() {
   const { t } = useTranslation()
   const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
   const setSearchApiConfig = useWikiStore((s) => s.setSearchApiConfig)
   const resolvedConfig = resolveSearchConfig(searchApiConfig)
-  const anyTxtConfig = normalizeAnyTxtConfig(resolvedConfig.anyTxt)
-  const anyTxtFilterDir = resolvedConfig.anyTxt?.filterDir ?? ""
-  const showBroadAnyTxtWarning = isBroadAnyTxtFilterDir(anyTxtFilterDir)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [savedId, setSavedId] = useState<string | null>(null)
   const [testStatus, setTestStatus] = useState<Record<string, { state: "testing" | "ok" | "warning" | "error"; message: string }>>({})
+  const [localSearchStatus, setLocalSearchStatus] = useState<LocalSearchStatus | null>(null)
+  const [restartingLocalSearch, setRestartingLocalSearch] = useState(false)
   const testRunRef = useRef<Record<string, number>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    void invoke<LocalSearchStatus>("local_search_status")
+      .then((status) => {
+        if (!cancelled) setLocalSearchStatus(status)
+      })
+      .catch(() => {
+        if (!cancelled) setLocalSearchStatus({
+          state: "stopped",
+          endpoint: "http://127.0.0.1:17888",
+          detail: "本机联网搜索尚未启动",
+        })
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  async function restartLocalSearch() {
+    setRestartingLocalSearch(true)
+    try {
+      setLocalSearchStatus(await invoke<LocalSearchStatus>("restart_local_search"))
+    } catch (err) {
+      setLocalSearchStatus({
+        state: "stopped",
+        endpoint: "http://127.0.0.1:17888",
+        detail: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setRestartingLocalSearch(false)
+    }
+  }
 
   async function persist(next: SearchApiConfig) {
     const { saveSearchApiConfig } = await import("@/lib/project-store")
@@ -146,23 +180,6 @@ export function WebSearchSection() {
     }
   }
 
-  function updateDeepResearchSource(deepResearchSource: DeepResearchSource) {
-    persist(resolveSearchConfig({ ...resolvedConfig, deepResearchSource })).catch(() => {})
-  }
-
-  function updateAnyTxt(patch: AnyTxtConfig) {
-    const next = resolveSearchConfig({
-      ...resolvedConfig,
-      anyTxt: {
-        ...anyTxtConfig,
-        ...patch,
-      },
-    })
-    persist(next).catch(() => {})
-    setSavedId("anytxt")
-    setTimeout(() => setSavedId((cur) => (cur === "anytxt" ? null : cur)), 1500)
-  }
-
   return (
     <div className="space-y-4">
       <div>
@@ -172,120 +189,30 @@ export function WebSearchSection() {
         </p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
-        <div>
-          <Label>{t("settings.sections.webSearch.deepResearchSources")}</Label>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Label>山竹本机联网搜索</Label>
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+              localSearchStatus?.state === "ready"
+                ? "bg-emerald-500/15 text-emerald-700"
+                : "bg-muted text-muted-foreground"
+            }`}>
+              {localSearchStatus?.state === "ready" ? "已就绪" : "正在启动"}
+            </span>
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("settings.sections.webSearch.deepResearchSourcesHint")}
+            {localSearchStatus?.detail ?? "山竹会自动在本机启动联网搜索，无需 API Key。"}
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3">
-          {([
-            ["web", t("settings.sections.webSearch.sourceWeb")],
-            ["anytxt", t("settings.sections.webSearch.sourceAnyTxt")],
-            ["both", t("settings.sections.webSearch.sourceBoth")],
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => updateDeepResearchSource(value)}
-              className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                (resolvedConfig.deepResearchSource ?? "web") === value
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border hover:bg-accent"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-3 rounded-lg border p-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <Label>{t("settings.sections.webSearch.anyTxtTitle")}</Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("settings.sections.webSearch.anyTxtDescription")}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {savedId === "anytxt" && (
-              <span className="text-[10px] text-emerald-600">
-                {t("settings.sections.webSearch.savedBadge")}
-              </span>
-            )}
-            {anyTxtConfig.enabled && (
-              <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {t("settings.sections.webSearch.activeBadge")}
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => updateAnyTxt({ enabled: !anyTxtConfig.enabled })}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full border transition-colors ${
-                anyTxtConfig.enabled
-                  ? "border-primary bg-primary"
-                  : "border-muted-foreground/30 bg-muted-foreground/20 hover:bg-muted-foreground/30"
-              }`}
-              aria-label={anyTxtConfig.enabled ? t("settings.sections.webSearch.deactivate") : t("settings.sections.webSearch.activate")}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm ring-1 ring-black/10 transition-transform ${
-                  anyTxtConfig.enabled ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>{t("settings.sections.webSearch.anyTxtEndpoint")}</Label>
-            <Input
-              value={anyTxtConfig.endpoint}
-              onChange={(e) => updateAnyTxt({ endpoint: e.target.value })}
-              placeholder="http://127.0.0.1:9920"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>{t("settings.sections.webSearch.anyTxtLimit")}</Label>
-            <Input
-              type="number"
-              min={1}
-              max={100}
-              value={anyTxtConfig.limit}
-              onChange={(e) => {
-                const value = e.target.value.trim()
-                updateAnyTxt({ limit: value ? Number(value) : undefined })
-              }}
-              placeholder="20"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>{t("settings.sections.webSearch.anyTxtFilterDir")}</Label>
-            <Input
-              value={anyTxtFilterDir}
-              onChange={(e) => updateAnyTxt({ filterDir: e.target.value })}
-              placeholder={t("settings.sections.webSearch.anyTxtFilterDirPlaceholder")}
-            />
-            {showBroadAnyTxtWarning && (
-              <p className="text-xs text-destructive">
-                {t("settings.sections.webSearch.anyTxtBroadDirWarning")}
-              </p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label>{t("settings.sections.webSearch.anyTxtFilterExt")}</Label>
-            <Input
-              value={anyTxtConfig.filterExt}
-              onChange={(e) => updateAnyTxt({ filterExt: e.target.value })}
-              placeholder="*"
-            />
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {t("settings.sections.webSearch.anyTxtHint")}
-        </p>
+        <button
+          type="button"
+          onClick={() => void restartLocalSearch()}
+          disabled={restartingLocalSearch}
+          className="shrink-0 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {restartingLocalSearch ? "正在启动…" : "重新启动本机搜索"}
+        </button>
       </div>
 
       <div className="space-y-2">
@@ -486,15 +413,6 @@ function localizeSearchTestError(err: unknown, t: ReturnType<typeof useTranslati
     return t("settings.sections.webSearch.firecrawlInvalidJson")
   }
   return t("settings.sections.webSearch.testFailed", { message })
-}
-
-function isBroadAnyTxtFilterDir(value: string): boolean {
-  const trimmed = value.trim().replace(/\\/g, "/")
-  if (!trimmed) return false
-  if (trimmed === "/" || trimmed === "~") return true
-  if (/^\/\/[^/]+\/[^/]+\/?$/.test(trimmed)) return true
-  if (/^[A-Za-z]:\/?$/.test(trimmed)) return true
-  return /^\/(?:Users|home|Volumes|mnt|media)?\/?$/.test(trimmed)
 }
 
 function SearXngCategoryPicker({

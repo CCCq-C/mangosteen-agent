@@ -9,6 +9,7 @@ import { LintView } from "@/components/lint/lint-view"
 import { SearchView } from "@/components/search/search-view"
 import { GraphView } from "@/components/graph/graph-view"
 import { PreviewPanel } from "./preview-panel"
+import { getAppLayoutVisibility } from "./app-layout-visibility"
 
 export function ContentArea() {
   const activeView = useWikiStore((s) => s.activeView)
@@ -18,25 +19,29 @@ export function ContentArea() {
   // its scroll position, expanded folders, and incremental row limit. Hiding
   // the mounted view makes closing the preview a true return operation.
   const [hasMountedSources, setHasMountedSources] = useState(activeView === "sources")
+  const [hasMountedChat, setHasMountedChat] = useState(activeView === "chat")
+  const { keepChatMounted } = getAppLayoutVisibility(activeView, false)
 
   useEffect(() => {
     if (activeView === "sources") setHasMountedSources(true)
+    if (activeView === "chat") setHasMountedChat(true)
   }, [activeView])
 
-  // Include the current view directly so the first navigation to Sources does
-  // not wait for the effect above and briefly render an empty content area.
-  if (hasMountedSources || activeView === "sources") {
-    return (
-      <>
+  return (
+    <>
+      {(hasMountedSources || activeView === "sources") && (
         <div className={activeView === "sources" ? "h-full" : "hidden"}>
           <SourcesView />
         </div>
-        {activeView !== "sources" && <ActiveContent activeView={activeView} />}
-      </>
-    )
-  }
-
-  return <ActiveContent activeView={activeView} />
+      )}
+      {keepChatMounted && hasMountedChat && (
+        <div className={activeView === "chat" ? "h-full" : "hidden"}>
+          <ChatPanel />
+        </div>
+      )}
+      {activeView !== "sources" && activeView !== "chat" && <ActiveContent activeView={activeView} />}
+    </>
+  )
 }
 
 function ActiveContent({

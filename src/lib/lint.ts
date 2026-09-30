@@ -211,9 +211,9 @@ export async function runSemanticLint(
   const activity = useActivityStore.getState()
   const activityId = activity.addItem({
     type: "lint",
-    title: "Semantic wiki lint",
+    title: "知识库语义体检",
     status: "running",
-    detail: "Reading wiki pages...",
+    detail: "正在读取知识库页面……",
     filesWritten: [],
   })
 
@@ -222,7 +222,7 @@ export async function runSemanticLint(
   try {
     tree = await listDirectory(wikiRoot)
   } catch {
-    activity.updateItem(activityId, { status: "error", detail: "Failed to read wiki directory." })
+    activity.updateItem(activityId, { status: "error", detail: "无法读取知识库目录。" })
     return []
   }
 
@@ -252,11 +252,11 @@ export async function runSemanticLint(
   }
 
   if (summaries.length === 0) {
-    activity.updateItem(activityId, { status: "done", detail: "No wiki pages to lint." })
+    activity.updateItem(activityId, { status: "done", detail: "知识库中没有可检查的页面。" })
     return []
   }
 
-  activity.updateItem(activityId, { detail: "Running LLM semantic analysis..." })
+  activity.updateItem(activityId, { detail: "正在进行 AI 语义分析……" })
 
   // For auto-mode language detection, sample the concatenated summaries
   // so non-English wikis get a matching language directive.
@@ -305,7 +305,7 @@ export async function runSemanticLint(
         hadError = true
         activity.updateItem(activityId, {
           status: "error",
-          detail: `LLM error: ${err.message}`,
+          detail: `大模型出错：${err.message}`,
         })
       },
     },
@@ -349,7 +349,7 @@ export async function runSemanticLint(
 
   activity.updateItem(activityId, {
     status: "done",
-    detail: `Found ${results.length} semantic issue(s).`,
+    detail: `发现 ${results.length} 个语义问题。`,
   })
 
   return results

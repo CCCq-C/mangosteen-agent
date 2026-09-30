@@ -338,7 +338,7 @@ async function processNext(projectId: string): Promise<void> {
 
   if (!pp) {
     next.status = "failed"
-    next.error = "Project not found in registry (was it deleted?)"
+    next.error = "项目不在项目列表中，可能已被删除。"
     await saveQueue(currentProjectPath)
     processNext(projectId)
     return
@@ -353,7 +353,7 @@ async function processNext(projectId: string): Promise<void> {
 
   if (!hasUsableLlm(llmConfig)) {
     next.status = "failed"
-    next.error = "LLM not configured — set API key in Settings"
+    next.error = "尚未配置大模型，请先在设置中填写 API 密钥。"
     processing = false
     await saveQueue(pp)
     return

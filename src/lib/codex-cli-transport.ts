@@ -62,9 +62,31 @@ type SpawnPayload = Record<string, unknown> & {
   streamId: string
   model: string
   prompt: string
+  images: Array<{ mediaType: string; dataBase64: string }>
   isolateLocalConfig: boolean
   timeoutMinutes?: number
   workingDirectory?: string
+}
+
+export function collectCodexCliImages(messages: ChatMessage[]): {
+  messages: ChatMessage[]
+  images: Array<{ mediaType: string; dataBase64: string }>
+} {
+  const images: Array<{ mediaType: string; dataBase64: string }> = []
+  return {
+    messages: messages.map((message) => {
+      if (typeof message.content === "string") return message
+      return {
+        ...message,
+        content: message.content.map((block) => {
+          if (block.type === "text") return block
+          images.push({ mediaType: block.mediaType, dataBase64: block.dataBase64 })
+          return { type: "text" as const, text: "[Image attached]" }
+        }),
+      }
+    }),
+    images,
+  }
 }
 
 export async function streamCodexCli(
@@ -201,10 +223,12 @@ export async function streamCodexCli(
       throw new Error("Codex CLI requires an active project working directory")
     }
 
+    const prepared = collectCodexCliImages(messages)
     const payload: SpawnPayload = {
       streamId,
       model: config.model,
-      prompt: buildPrompt(messages),
+      prompt: buildPrompt(prepared.messages),
+      images: prepared.images,
       isolateLocalConfig: config.localCliIsolation === true,
       timeoutMinutes: config.codexCliTimeoutMinutes,
       workingDirectory,

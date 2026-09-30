@@ -1004,14 +1004,14 @@ async function runTask(
     const message = err instanceof Error ? err.message : String(err)
     if (isUsageLimitError(message)) {
       task.status = "pending"
-      task.error = `Paused after provider usage limit: ${message}`
+      task.error = `模型服务额度不足，任务已暂停：${message}`
       paused = true
       for (const [taskId, activeRun] of activeRuns) {
         if (taskId === task.id) continue
         const sibling = queue.find((candidate) => candidate.id === taskId)
         if (sibling?.projectId !== projectId || sibling.status !== "processing") continue
         sibling.status = "pending"
-        sibling.error = `Paused after provider usage limit: ${message}`
+        sibling.error = `模型服务额度不足，任务已暂停：${message}`
         activeRun.controller.abort()
       }
       await saveQueue(projectPath)
@@ -1046,7 +1046,7 @@ async function startTask(projectId: string, task: IngestTask): Promise<boolean> 
   if (currentProjectId !== projectId || queueEpoch !== startEpoch) return false
   if (!projectPath) {
     task.status = "failed"
-    task.error = "Project not found in registry (was it deleted?)"
+    task.error = "项目不在项目列表中，可能已被删除。"
     await saveQueue(currentProjectPath)
     return true
   }
@@ -1054,7 +1054,7 @@ async function startTask(projectId: string, task: IngestTask): Promise<boolean> 
   const llmConfig = getTaskLlmConfig("ingest")
   if (!hasUsableLlm(llmConfig)) {
     task.status = "failed"
-    task.error = "LLM not configured — set API key in Settings"
+    task.error = "尚未配置大模型，请先在设置中填写 API 密钥。"
     await saveQueue(projectPath)
     return true
   }

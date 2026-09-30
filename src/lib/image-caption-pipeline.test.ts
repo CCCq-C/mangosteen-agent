@@ -292,16 +292,19 @@ describe("captionMarkdownImages", () => {
     expect(mockReadBase64).toHaveBeenCalledWith("/custom/anchor/media/foo/img-1.png")
   })
 
-  it("skips Codex CLI captioning once before reading image bytes", async () => {
-    const out = await captionMarkdownImages("/proj", "![](/abs/a.png)\n![](/abs/b.png)", {
+  it("runs Codex CLI captioning with the same image pipeline", async () => {
+    mockReadBase64.mockResolvedValue({ base64: "AAAA", mimeType: "image/png" })
+    mockCaption.mockResolvedValue("c")
+
+    const out = await captionMarkdownImages("/proj", "![](/abs/a.png)", {
       ...cfg,
       provider: "codex-cli",
     })
 
-    expect(out.enrichedMarkdown).toBe("![](/abs/a.png)\n![](/abs/b.png)")
-    expect(out.failed).toBe(2)
-    expect(mockReadBase64).not.toHaveBeenCalled()
-    expect(mockCaption).not.toHaveBeenCalled()
+    expect(out.enrichedMarkdown).toBe("![c](/abs/a.png)")
+    expect(out.freshCaptions).toBe(1)
+    expect(mockReadBase64).toHaveBeenCalledWith("/abs/a.png")
+    expect(mockCaption).toHaveBeenCalled()
   })
 
   it("forwards AbortSignal to captionImage", async () => {

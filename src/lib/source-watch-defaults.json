@@ -1,7 +1,7 @@
 {
   "enabled": true,
   "autoIngest": true,
-  "persistExtractedMarkdown": false,
+  "persistExtractedMarkdown": true,
   "parsingConcurrency": 2,
   "ingestConcurrency": 1,
   "includeExtensions": [

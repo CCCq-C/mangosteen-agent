@@ -141,7 +141,7 @@ export function detectKnowledgeGaps(
     if (comm.cohesion < 0.15 && comm.nodeCount >= 3) {
       gaps.push({
         type: "sparse-community",
-        title: `Sparse cluster: ${comm.topNodes[0] ?? `Community ${comm.id}`}`,
+        title: `关联较少的知识群：${comm.topNodes[0] ?? `知识群 ${comm.id}`}`,
         description: `${comm.nodeCount} pages with cohesion ${comm.cohesion.toFixed(2)} — internal connections are weak.`,
         nodeIds: nodes.filter((n) => n.community === comm.id).map((n) => n.id),
         suggestion: `This knowledge area lacks internal cross-references. Consider adding links between these pages or researching to fill gaps.`,
@@ -182,8 +182,8 @@ export function detectKnowledgeGaps(
     const commCount = communityNeighbors.get(bridge.id)?.size ?? 0
     gaps.push({
       type: "bridge-node",
-      title: `Key bridge: ${bridge.label}`,
-      description: `Connects ${commCount} different knowledge clusters. This is a critical junction in your wiki.`,
+      title: `关键连接点：${bridge.label}`,
+      description: `连接了 ${commCount} 个不同的知识群，是知识库中的重要交汇点。`,
       nodeIds: [bridge.id],
       suggestion: `This page bridges multiple knowledge areas. Ensure it's well-maintained — if it's thin, expanding it will strengthen your entire wiki.`,
     })

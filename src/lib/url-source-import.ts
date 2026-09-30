@@ -201,7 +201,7 @@ export async function importSourceUrls(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     for (const result of results) {
-      if (result.path) result.error = `Saved, but failed to queue ingest: ${message}`
+      if (result.path) result.error = `资料已保存，但加入整理队列失败：${message}`
     }
   }
   return results

@@ -9,7 +9,7 @@ import "katex/dist/katex.min.css"
 import {
   Bot, User, FileText, BookmarkPlus, ChevronDown, ChevronRight, RefreshCw, Copy, Check,
   Users, Lightbulb, BookOpen, HelpCircle, GitMerge, BarChart3, Layout, Globe,
-  TrendingUp, Target, Sparkles, Image as ImageIcon, FileSearch, Terminal,
+  TrendingUp, Target, Sparkles, Image as ImageIcon, Terminal,
   ListTree,
 } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
@@ -39,6 +39,7 @@ import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { getFileCategory, getFileExtension, isTextReadable } from "@/lib/file-types"
 import { AgentFileActivity } from "@/components/chat/agent-file-activity"
 import { ReferenceKnowledgeGraph } from "@/components/chat/reference-knowledge-graph"
+import { pickStreamingStatusPhrase, resolveStreamingStatusKind } from "@/lib/chat-stream-status"
 
 // Module-level cache of source file names
 let cachedSourceFiles: string[] = []
@@ -662,15 +663,12 @@ const REF_TYPE_CONFIG: Record<string, { icon: typeof FileText; color: string }> 
   overview: { icon: Layout, color: "text-yellow-500" },
   clip: { icon: Globe, color: "text-blue-400" },
   external: { icon: Globe, color: "text-sky-500" },
-  anytxt: { icon: FileSearch, color: "text-emerald-500" },
   workspace: { icon: FileText, color: "text-cyan-500" },
 }
 
 function getRefType(path: string, page?: CitedPage): string {
   if (page?.kind === "workspace") return "workspace"
-  if (page?.kind === "external") {
-    return page.source?.toLowerCase() === "anytxt" ? "anytxt" : "external"
-  }
+  if (page?.kind === "external") return "external"
   if (path.includes("raw/sources/")) return "clip"
   return inferWikiTypeFromPath(path) ?? "source"
 }
@@ -692,15 +690,15 @@ function displayExternalPath(page: CitedPage): string {
   return raw
 }
 
-function isAnyTxtReference(page: CitedPage): boolean {
-  return page.kind === "external" && page.source?.toLowerCase() === "anytxt"
-}
-
 function referenceSourceLabel(page: CitedPage): string {
-  if (isAnyTxtReference(page)) return "AnyTXT"
-  if (page.kind === "workspace") return "Workspace"
-  if (page.kind === "external") return page.source || "Web"
-  return "Wiki"
+  if (page.kind === "workspace") return "工作区"
+  if (page.kind === "external") {
+    if (page.source === "Web") return "网页"
+    if (page.source === "Source") return "资料来源"
+    if (page.source === "Graph") return "知识图谱"
+    return page.source || "网页"
+  }
+  return "知识库"
 }
 
 function referenceLocator(page: CitedPage): string {
@@ -948,8 +946,17 @@ function CitedReferencesPanel({
     }
     if (page.kind === "external") {
       const target = page.url || page.path
+      try {
+        const url = new URL(target)
+        if (url.protocol === "http:" || url.protocol === "https:") {
+          await openUrl(url.toString())
+          return
+        }
+      } catch (err) {
+        console.warn("[chat refs] failed to open external reference:", err)
+      }
       const displayPath = displayExternalPath(page)
-      const previewPath = `${isAnyTxtReference(page) ? "anytxt" : "external"}-preview://${encodeURIComponent(target || page.title)}`
+      const previewPath = `external-preview://${encodeURIComponent(target || page.title)}`
       const previewContent = [
         `# ${page.title}`,
         "",
@@ -971,22 +978,14 @@ function CitedReferencesPanel({
         })
         return
       }
-      if (isAnyTxtReference(page)) {
-        openFileInPreview(previewPath, previewContent)
-        useWikiStore.getState().setExternalPreview({
-          title: page.title,
-          path: previewPath,
-          source: referenceSourceLabel(page),
-          url: displayPath,
-          snippet: page.snippet ?? "",
-        })
-        return
-      }
-      if (target) {
-        await openUrl(target).catch((err) => {
-          console.warn("[chat refs] failed to open external reference:", err)
-        })
-      }
+      openFileInPreview(previewPath, previewContent)
+      useWikiStore.getState().setExternalPreview({
+        title: page.title,
+        path: previewPath,
+        source: referenceSourceLabel(page),
+        url: displayPath,
+        snippet: page.snippet ?? "",
+      })
       return
     }
     if (!project) return
@@ -1183,7 +1182,7 @@ function CitedReferencesPanel({
                   type="button"
                   onClick={() => handleJumpToImageSource(info.firstUrl!, page.path)}
                   className="flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-blue-600 hover:bg-blue-100/40 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
-                  title={`Open original document at first image (${info.count} image${info.count === 1 ? "" : "s"} on this page)`}
+                  title={`打开第一张图片所在的原始文档（本页共 ${info.count} 张图片）`}
                 >
                   <ImageIcon className="h-3 w-3" />
                   {info.count}
@@ -1202,7 +1201,7 @@ function CitedReferencesPanel({
                       {referenceLocator(page)}
                     </span>
                   )}
-                  {isAnyTxtReference(page) && referenceSnippet(page) && (
+                  {page.kind === "external" && referenceSnippet(page) && (
                     <span className="mt-0.5 line-clamp-2 whitespace-normal text-[10px] leading-4 text-muted-foreground">
                       {referenceSnippet(page)}
                     </span>
@@ -1314,6 +1313,11 @@ interface StreamingMessageProps {
 export function StreamingMessage({ content, agentEvents = [] }: StreamingMessageProps) {
   const { thinking, answer } = useMemo(() => separateThinking(content), [content])
   const isThinking = thinking !== null && answer.length === 0
+  const statusKind = useMemo(
+    () => resolveStreamingStatusKind(answer, agentEvents),
+    [answer, agentEvents],
+  )
+  const statusPhrase = useMemo(() => pickStreamingStatusPhrase(statusKind), [statusKind])
 
   return (
     <div className="flex gap-2 flex-row">
@@ -1321,6 +1325,19 @@ export function StreamingMessage({ content, agentEvents = [] }: StreamingMessage
         <Bot className="h-4 w-4" />
       </div>
       <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-muted text-foreground">
+        <div className="mb-2 flex items-center gap-2 border-b border-border/40 pb-2 text-xs text-primary" role="status" aria-live="polite">
+          <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+          <span>{statusPhrase}</span>
+          <span className="flex gap-0.5" aria-hidden="true">
+            {[0, 1, 2].map((dot) => (
+              <span
+                key={dot}
+                className="h-1 w-1 animate-bounce rounded-full bg-primary"
+                style={{ animationDelay: `${dot * 140}ms` }}
+              />
+            ))}
+          </span>
+        </div>
         <AgentActivity events={agentEvents} />
         {isThinking ? (
           <StreamingThinkingBlock content={thinking} />
@@ -1406,8 +1423,6 @@ function agentStageIcon(stage: ChatAgentEventStage) {
       return GitMerge
     case "searching_web":
       return Globe
-    case "searching_anytxt":
-      return FileSearch
     case "reading_context":
       return Layout
     case "writing":
@@ -1692,7 +1707,7 @@ function WikiLink({ pageName, children }: { pageName: string; children: React.Re
 
   if (exists === false) {
     return (
-      <span className="inline text-muted-foreground" title={`Page not found: ${pageName}`}>
+      <span className="inline text-muted-foreground" title={`找不到页面：${pageName}`}>
         {children}
       </span>
     )
@@ -1703,7 +1718,7 @@ function WikiLink({ pageName, children }: { pageName: string; children: React.Re
       type="button"
       onClick={handleClick}
       className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-primary underline decoration-primary/30 hover:bg-primary/10 hover:decoration-primary"
-      title={`Open wiki page: ${pageName}`}
+      title={`打开知识库页面：${pageName}`}
     >
       <FileText className="inline h-3 w-3" />
       {children}

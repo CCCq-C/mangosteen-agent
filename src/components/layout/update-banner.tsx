@@ -95,12 +95,12 @@ export function UpdateBanner() {
         className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
       >
         <Download className="h-3.5 w-3.5" />
-        {t("updateBanner.openDownload", { defaultValue: "Open download page" })}
+        {t("updateBanner.openDownload", { defaultValue: "打开下载页" })}
       </button>
       <button
         type="button"
         onClick={handleDismiss}
-        aria-label={t("updateBanner.dismiss", { defaultValue: "Dismiss" })}
+        aria-label={t("updateBanner.dismiss", { defaultValue: "关闭" })}
         className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <X className="h-4 w-4" />

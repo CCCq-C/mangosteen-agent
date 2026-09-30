@@ -3,12 +3,16 @@ import { projectLlmProfile, resolveProjectLlmConfig, resolveTaskLlmConfig } from
 import type { LlmConfig } from "@/stores/wiki-store"
 
 const fallback: LlmConfig = {
-  provider: "openai",
+  provider: "codex-cli",
   apiKey: "global-key",
-  model: "global-model",
+  model: "gpt-5.6-astra",
   ollamaUrl: "http://localhost:11434",
   customEndpoint: "",
-  maxContextSize: 128000,
+  maxContextSize: 192000,
+  reasoning: { mode: "high" },
+  localCliIsolation: true,
+  codexCliTimeoutMinutes: 35,
+  streamingEnabled: false,
 }
 
 describe("resolveTaskLlmConfig", () => {
@@ -19,25 +23,39 @@ describe("resolveTaskLlmConfig", () => {
     }).provider).toBe("codex-cli")
   })
 
-  it("resolves chat and ingest from independent provider presets", () => {
+  it("ignores legacy task routing without changing global Codex controls", () => {
     const configs = {
-      openai: { apiKey: "chat-key", model: "gpt-4o-mini" },
-      anthropic: { apiKey: "ingest-key", model: "claude-sonnet-4-6" },
+      openai: {
+        apiKey: "chat-key",
+        model: "gpt-4o-mini",
+        maxContextSize: 16000,
+        reasoning: { mode: "off" as const },
+        localCliIsolation: false,
+        codexCliTimeoutMinutes: 1,
+        streamingEnabled: true,
+      },
     }
-    const routing = { chatPresetId: "openai", ingestPresetId: "anthropic" }
+    const routing = { chatPresetId: "openai", ingestPresetId: null }
 
-    expect(resolveTaskLlmConfig("chat", fallback, configs, routing).provider).toBe("codex-cli")
-    expect(resolveTaskLlmConfig("ingest", fallback, configs, routing).provider).toBe("codex-cli")
+    expect(resolveTaskLlmConfig("chat", fallback, configs, routing)).toMatchObject({
+      provider: "codex-cli",
+      model: "gpt-5.6-astra",
+      maxContextSize: 192000,
+      reasoning: { mode: "high" },
+      localCliIsolation: true,
+      codexCliTimeoutMinutes: 35,
+      streamingEnabled: false,
+    })
   })
 
-  it("falls back to Codex when a persisted preset id no longer exists", () => {
+  it("ignores a missing legacy task preset and uses global Codex config", () => {
     expect(resolveTaskLlmConfig("ingest", fallback, {}, {
       chatPresetId: null,
       ingestPresetId: "removed-provider",
     }).provider).toBe("codex-cli")
   })
 
-  it("routes tasks through a user-defined custom provider", () => {
+  it("ignores legacy custom task routing and uses global Codex config", () => {
     const custom = [{ id: "custom-team", label: "Team Gateway" }]
     expect(resolveTaskLlmConfig(
       "chat",
@@ -49,7 +67,7 @@ describe("resolveTaskLlmConfig", () => {
     ).provider).toBe("codex-cli")
   })
 
-  it("routes an Ollama task preset through Codex", () => {
+  it("ignores legacy Ollama task routing and uses global Codex config", () => {
     expect(resolveTaskLlmConfig(
       "ingest",
       fallback,
@@ -69,7 +87,7 @@ describe("resolveProjectLlmConfig", () => {
     expect(profile).not.toHaveProperty("customHeaders")
   })
 
-  it("keeps the global config when project overrides are disabled", () => {
+  it("ignores disabled legacy project overrides and uses global Codex config", () => {
     expect(resolveProjectLlmConfig(fallback, {}, {
       enabled: false,
       presetId: "anthropic",
@@ -77,18 +95,34 @@ describe("resolveProjectLlmConfig", () => {
     }).provider).toBe("codex-cli")
   })
 
-  it("uses global credentials with a project-specific provider and model", () => {
+  it("ignores legacy project overrides without changing global Codex controls", () => {
     const resolved = resolveProjectLlmConfig(fallback, {
-      anthropic: { apiKey: "shared-secret", model: "global-anthropic-model" },
+      anthropic: {
+        apiKey: "shared-secret",
+        model: "global-anthropic-model",
+        maxContextSize: 16000,
+        reasoning: { mode: "off" },
+        localCliIsolation: false,
+        codexCliTimeoutMinutes: 1,
+        streamingEnabled: true,
+      },
     }, {
       enabled: true,
       presetId: "anthropic",
       model: "project-sonnet",
     })
-    expect(resolved.provider).toBe("codex-cli")
+    expect(resolved).toMatchObject({
+      provider: "codex-cli",
+      model: "gpt-5.6-astra",
+      maxContextSize: 192000,
+      reasoning: { mode: "high" },
+      localCliIsolation: true,
+      codexCliTimeoutMinutes: 35,
+      streamingEnabled: false,
+    })
   })
 
-  it("supports a user-defined custom provider as a project override", () => {
+  it("ignores legacy custom project overrides and uses global Codex config", () => {
     expect(resolveProjectLlmConfig(
       fallback,
       { "custom-team": { apiKey: "secret", baseUrl: "https://team.example/v1" } },
@@ -97,7 +131,7 @@ describe("resolveProjectLlmConfig", () => {
     ).provider).toBe("codex-cli")
   })
 
-  it("routes an Ollama project preset through Codex", () => {
+  it("ignores legacy Ollama project overrides and uses global Codex config", () => {
     expect(resolveProjectLlmConfig(
       fallback,
       { ollama: { model: "qwen3:8b", baseUrl: "http://localhost:11434" } },
@@ -105,7 +139,7 @@ describe("resolveProjectLlmConfig", () => {
     ).provider).toBe("codex-cli")
   })
 
-  it("makes a project override take precedence over global task routing", () => {
+  it("ignores legacy project and task routing and uses global Codex config", () => {
     expect(resolveTaskLlmConfig(
       "chat",
       { ...fallback, provider: "anthropic", model: "project-sonnet" },

@@ -713,11 +713,11 @@ describe("autoIngest source summary paths", () => {
       useWikiStore.getState().llmConfig,
       undefined,
       "project-a",
-    )).rejects.toThrow("Ingest incomplete")
+    )).rejects.toThrow("资料整理未完成")
 
     const activity = useActivityStore.getState().items[0]
     expect(activity.status).toBe("error")
-    expect(activity.detail).toContain("could not be repaired")
+    expect(activity.detail).toContain("无法修复")
     expect(activity.detail).toContain("wiki/concepts/incomplete.md")
   })
 
@@ -736,7 +736,7 @@ describe("autoIngest source summary paths", () => {
         controller.signal,
         "project-a",
       ),
-    ).rejects.toThrow("Ingest cancelled")
+    ).rejects.toThrow("资料整理已取消")
   })
 
   it("falls back to built-in PDF extraction when MinerU fails for a non-cancelled ingest", async () => {
@@ -765,7 +765,7 @@ describe("autoIngest source summary paths", () => {
     expect(mockParseWithMineru).toHaveBeenCalled()
     expect(
       updateSpy.mock.calls.some(([, updates]) =>
-        updates.detail?.includes("falling back to built-in PDF extraction"),
+        updates.detail?.includes("已改用内置 PDF 解析"),
       ),
     ).toBe(true)
     updateSpy.mockRestore()
@@ -821,11 +821,11 @@ describe("autoIngest source summary paths", () => {
         controller.signal,
         "project-a",
       ),
-    ).rejects.toThrow("Ingest cancelled")
+    ).rejects.toThrow("资料整理已取消")
 
     expect(
       useActivityStore.getState().items.some((item) =>
-        item.detail?.includes("falling back to built-in PDF extraction"),
+        item.detail?.includes("已改用内置 PDF 解析"),
       ),
     ).toBe(false)
   })

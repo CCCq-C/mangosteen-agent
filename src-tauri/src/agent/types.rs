@@ -41,8 +41,6 @@ pub struct AgentToolOptions {
     pub wiki: bool,
     #[serde(default)]
     pub web: bool,
-    #[serde(default)]
-    pub anytxt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,7 +78,6 @@ impl Default for AgentToolOptions {
         Self {
             wiki: true,
             web: false,
-            anytxt: false,
         }
     }
 }
@@ -308,7 +305,6 @@ mod tests {
         assert_eq!(req.skill_mode, AgentSkillMode::Explicit);
         assert!(req.tools.wiki);
         assert!(!req.tools.web);
-        assert!(!req.tools.anytxt);
         assert!(req.persist_session);
     }
 
@@ -320,8 +316,7 @@ mod tests {
             "retrievalMode": "smart",
             "tools": {
                 "wiki": false,
-                "web": true,
-                "anytxt": true
+                "web": true
             }
         }))
         .unwrap();
@@ -330,7 +325,6 @@ mod tests {
         assert_eq!(req.retrieval_mode, AgentRetrievalMode::Smart);
         assert!(!req.tools.wiki);
         assert!(req.tools.web);
-        assert!(req.tools.anytxt);
         assert!(req.images.is_empty());
     }
 

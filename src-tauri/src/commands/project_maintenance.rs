@@ -237,7 +237,7 @@ fn import_project_archive_inner(
         }
     }
     if !has_project_index {
-        return Err("Archive is not an LLM Wiki project (wiki/index.md is missing)".into());
+        return Err("压缩包不是有效的山竹智能体项目（缺少 wiki/index.md）".into());
     }
     let root = PathBuf::from(destination);
     if root.exists()

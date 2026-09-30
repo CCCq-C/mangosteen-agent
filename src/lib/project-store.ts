@@ -1,6 +1,7 @@
 import { load } from "@tauri-apps/plugin-store"
 import type { WikiProject } from "@/types/wiki"
 import type { ApiConfig, CustomLlmPreset, GeneralConfig, LlmConfig, SearchApiConfig, EmbeddingConfig, MineruConfig, MultimodalConfig, OutputLanguage, ProjectLlmOverride, ProviderConfigs, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, TaskModelRoutingConfig } from "@/stores/wiki-store"
+import { LLM_PRESETS } from "@/components/settings/llm-presets"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { normalizePath } from "@/lib/path-utils"
 import { DEFAULT_ZOOM_LEVEL, clampZoomLevel } from "@/stores/zoom-store"
@@ -97,7 +98,12 @@ function normalizeCustomLlmPresets(value: unknown): CustomLlmPreset[] {
     const label = typeof candidate.label === "string" ? candidate.label.trim().slice(0, 80) : ""
     if (!label || seen.has(candidate.id)) continue
     seen.add(candidate.id)
-    normalized.push({ id: candidate.id, label })
+    const basePresetId = typeof candidate.basePresetId === "string" && LLM_PRESETS.some(
+      (preset) => preset.id === candidate.basePresetId && preset.id !== "custom",
+    )
+      ? candidate.basePresetId
+      : undefined
+    normalized.push({ id: candidate.id, label, ...(basePresetId ? { basePresetId } : {}) })
   }
   return normalized
 }
@@ -306,17 +312,13 @@ const GENERAL_CONFIG_KEY = "generalConfig"
 
 export const DEFAULT_GENERAL_CONFIG: GeneralConfig = {
   autostart: false,
-  closeBehavior: "minimize",
+  closeBehavior: "exit",
 }
 
 export function normalizeGeneralConfig(config?: Partial<GeneralConfig> | null): GeneralConfig {
-  const closeBehavior = config?.closeBehavior
   return {
     autostart: typeof config?.autostart === "boolean" ? config.autostart : DEFAULT_GENERAL_CONFIG.autostart,
-    closeBehavior:
-      closeBehavior === "ask" || closeBehavior === "minimize" || closeBehavior === "exit"
-        ? closeBehavior
-        : DEFAULT_GENERAL_CONFIG.closeBehavior,
+    closeBehavior: "exit",
   }
 }
 

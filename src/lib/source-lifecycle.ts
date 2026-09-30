@@ -3,6 +3,7 @@ import {
   createDirectory,
   deleteFile,
   fileExists,
+  getFileMd5,
   getFileSize,
   listDirectory,
   readFile,
@@ -76,6 +77,19 @@ export const INGESTABLE_SOURCE_EXTENSIONS = new Set([
   "mobi",
   "org",
 ])
+
+export function sourceImportPathsFromMessage(message: string): string[] {
+  const wantsImport = /(?:保存|存入|导入|添加|加入|放入|收录|记住|归档).{0,12}(?:知识库|资料库|wiki|山竹)|(?:知识库|资料库|wiki|山竹).{0,12}(?:保存|存入|导入|添加|加入|放入|收录|记住|归档)|(?:导入|收录|记住|归档).{0,12}(?:这个|该|本地)?(?:文件|资料)?/i.test(message)
+  const refusesImport = /(?:不要|不用|不需要|别|禁止)[^。！？；;\r\n]{0,300}(?:保存|存入|导入|添加|加入|放入|收录|记住|归档)|(?:保存|存入|导入|添加|加入|放入|收录|记住|归档)[^。！？；;\r\n]{0,300}(?:不要|不用|不需要|别|禁止)/i.test(message)
+  const asksHow = /(?:如何|怎么|怎样).{0,18}(?:保存|存入|导入|添加|加入|放入|收录|记住|归档)/i.test(message)
+  if (!wantsImport || refusesImport || asksHow) return []
+
+  const pathPattern = new RegExp(
+    `["“”']?([A-Za-z]:[\\\\/][^"“”'\\r\\n]*?\\.[A-Za-z0-9]{1,10})(?=["“”'\\s，。；、]|$)`,
+    "gi",
+  )
+  return [...new Set(Array.from(message.matchAll(pathPattern), (match) => match[1]))]
+}
 
 function flattenFiles(nodes: FileNode[]): FileNode[] {
   const files: FileNode[] = []
@@ -289,6 +303,7 @@ export type SourceImportSkipReason =
   | "unreadable"
   | "copy-failed"
   | "sensitive-config"
+  | "duplicate"
 
 export interface SkippedSourceImport {
   name: string
@@ -299,6 +314,9 @@ export interface SkippedSourceImport {
 export interface SourceImportResult {
   imported: string[]
   skipped: SkippedSourceImport[]
+  ingestStatus: "not-started" | "saved-only" | "queued"
+  ingestTaskIds: string[]
+  ingestError?: string
 }
 
 function formatMegabytes(bytes: number): string {
@@ -353,7 +371,25 @@ export async function importSourceFiles(
       continue
     }
 
-    const destPath = await getUniqueDestPath(`${pp}/raw/sources`, originalName)
+    const sourceDir = `${pp}/raw/sources`
+    const existingPath = `${sourceDir}/${originalName}`
+    if (await fileExists(existingPath)) {
+      try {
+        if (await getFileMd5(sourcePath) === await getFileMd5(existingPath)) {
+          skipped.push({
+            name: originalName,
+            reason: "duplicate",
+            detail: "知识库中已存在相同文件",
+          })
+          continue
+        }
+      } catch {
+        // Hashing is only a duplicate optimization; a read failure must not
+        // prevent the user from importing a safe versioned copy.
+      }
+    }
+
+    const destPath = await getUniqueDestPath(sourceDir, originalName)
     try {
       await copyFile(sourcePath, destPath)
       importedPaths.push(destPath)
@@ -363,11 +399,25 @@ export async function importSourceFiles(
     }
   }
 
-  await enqueueSourceIngest(project, importedPaths, llmConfig, {
-    parsingConcurrency: cfg.parsingConcurrency,
-  })
+  let ingestTaskIds: string[] = []
+  let ingestError: string | undefined
+  try {
+    ingestTaskIds = await enqueueSourceIngest(project, importedPaths, llmConfig, {
+      parsingConcurrency: cfg.parsingConcurrency,
+    })
+  } catch (err) {
+    ingestError = errorDetail(err)
+  }
 
-  return { imported: importedPaths, skipped }
+  return {
+    imported: importedPaths,
+    skipped,
+    ingestStatus: importedPaths.length === 0
+      ? "not-started"
+      : ingestTaskIds.length > 0 ? "queued" : "saved-only",
+    ingestTaskIds,
+    ingestError,
+  }
 }
 
 export async function importSourceFolder(
@@ -431,15 +481,29 @@ export async function importSourceFolder(
     naturalCompare(getRelativePath(a, destDir), getRelativePath(b, destDir)),
   )
 
+  let ingestTaskIds: string[] = []
+  let ingestError: string | undefined
   if (hasUsableLlm(getTaskLlmConfig("ingest", llmConfig))) {
-    await enqueueSourceIngest(project, naturallyOrderedFiles, llmConfig, {
-      sourceRoot: destDir,
-      rootContext: folderName,
-      parsingConcurrency: cfg.parsingConcurrency,
-    })
+    try {
+      ingestTaskIds = await enqueueSourceIngest(project, naturallyOrderedFiles, llmConfig, {
+        sourceRoot: destDir,
+        rootContext: folderName,
+        parsingConcurrency: cfg.parsingConcurrency,
+      })
+    } catch (err) {
+      ingestError = errorDetail(err)
+    }
   }
 
-  return { imported: naturallyOrderedFiles, skipped }
+  return {
+    imported: naturallyOrderedFiles,
+    skipped,
+    ingestStatus: naturallyOrderedFiles.length === 0
+      ? "not-started"
+      : ingestTaskIds.length > 0 ? "queued" : "saved-only",
+    ingestTaskIds,
+    ingestError,
+  }
 }
 
 export async function deleteSourceFile(

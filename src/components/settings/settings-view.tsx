@@ -2,19 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Bot,
   Binary,
-  Globe,
   Languages,
   Palette,
   Info,
-  Image as ImageIcon,
-  Network,
   History,
   Wrench,
   Clock,
-  FolderSync,
-  Server,
+  Code2,
   Settings,
-  FileText,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { invoke } from "@tauri-apps/api/core"
@@ -33,7 +28,6 @@ import { setIngestWorkerLimit } from "@/lib/ingest-queue"
 import { LlmProviderSection } from "./sections/llm-provider-section"
 import { EmbeddingSection } from "./sections/embedding-section"
 import { MultimodalSection } from "./sections/multimodal-section"
-import { WebSearchSection } from "./sections/web-search-section"
 import { OutputSection } from "./sections/output-section"
 import { InterfaceSection } from "./sections/interface-section"
 import { NetworkSection } from "./sections/network-section"
@@ -50,13 +44,8 @@ type CategoryId =
   | "general"
   | "llm"
   | "embedding"
-  | "multimodal"
-  | "web-search"
-  | "network"
-  | "source-watch"
   | "scheduled-import"
-  | "mineru"
-  | "api-server"
+  | "advanced"
   | "output"
   | "interface"
   | "maintenance"
@@ -76,13 +65,8 @@ const CATEGORIES: Category[] = [
   { id: "general", labelKey: "settings.categories.general", icon: Settings },
   { id: "llm", labelKey: "settings.categories.llm", icon: Bot },
   { id: "embedding", labelKey: "settings.categories.embedding", icon: Binary },
-  { id: "multimodal", labelKey: "settings.categories.multimodal", icon: ImageIcon },
-  { id: "web-search", labelKey: "settings.categories.webSearch", icon: Globe },
-  { id: "network", labelKey: "settings.categories.network", icon: Network },
-  { id: "source-watch", labelKey: "settings.categories.sourceWatch", icon: FolderSync },
   { id: "scheduled-import", labelKey: "settings.categories.scheduledImport", icon: Clock },
-  { id: "mineru", labelKey: "settings.categories.mineru", icon: FileText },
-  { id: "api-server", labelKey: "settings.categories.apiServer", icon: Server },
+  { id: "advanced", labelKey: "settings.categories.advanced", icon: Code2 },
   { id: "output", labelKey: "settings.categories.output", icon: Languages },
   { id: "interface", labelKey: "settings.categories.interface", icon: Palette },
   { id: "maintenance", labelKey: "settings.categories.maintenance", icon: Wrench },
@@ -194,7 +178,6 @@ export function SettingsView() {
   const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
   const llmConfig = useWikiStore((s) => s.llmConfig)
-  const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
   const embeddingConfig = useWikiStore((s) => s.embeddingConfig)
   const setEmbeddingConfig = useWikiStore((s) => s.setEmbeddingConfig)
   const multimodalConfig = useWikiStore((s) => s.multimodalConfig)
@@ -334,8 +317,6 @@ export function SettingsView() {
   const handleSave = useCallback(async () => {
     setSaveError(null)
     const {
-      saveLlmConfig,
-      loadLlmConfig,
       saveEmbeddingConfig,
       loadEmbeddingConfig,
       saveMultimodalConfig,
@@ -357,20 +338,6 @@ export function SettingsView() {
       loadZoomLevel,
     } = await import("@/lib/project-store")
 
-    const newLlm = {
-      provider: draft.provider,
-      apiKey: draft.apiKey,
-      model: draft.model,
-      ollamaUrl: draft.ollamaUrl,
-      customEndpoint: draft.customEndpoint,
-      azureApiVersion: draft.provider === "azure" ? draft.azureApiVersion.trim() : undefined,
-      azureModelFamily: draft.provider === "azure" ? draft.azureModelFamily : undefined,
-      maxContextSize: draft.maxContextSize,
-      apiMode: draft.provider === "custom" ? draft.apiMode : undefined,
-      reasoning: draft.reasoning,
-      ingestReasoning: draft.ingestReasoning,
-      localCliIsolation: draft.localCliIsolation,
-    }
     const newEmbed = {
       enabled: draft.embeddingEnabled,
       endpoint: draft.embeddingEndpoint,
@@ -444,11 +411,10 @@ export function SettingsView() {
       closeBehavior: draft.closeBehavior,
     }
 
-    // Push all config values to zustand before any awaited save below. The
+    // Push all non-LLM config values to zustand before any awaited save below. The
     // settings draft resync effect runs after store updates; if any config stays
     // stale until later in the save sequence, that resync can briefly restore
     // the old value and make the UI look like saving reverted the user's edit.
-    setLlmConfig(newLlm)
     setEmbeddingConfig(newEmbed)
     setMultimodalConfig(newMultimodal)
     setOutputLanguage(draft.outputLanguage as typeof outputLanguage)
@@ -462,7 +428,6 @@ export function SettingsView() {
     setGeneralConfig(newGeneralConfig)
 
     try {
-      await saveLlmConfig(newLlm)
       await saveEmbeddingConfig(newEmbed)
       await saveMultimodalConfig(newMultimodal)
       await saveOutputLanguage(draft.outputLanguage as typeof outputLanguage, project?.id)
@@ -551,7 +516,6 @@ export function SettingsView() {
         result.status === "fulfilled" ? result.value : fallback
       try {
         const [
-          persistedLlm,
           persistedEmbedding,
           persistedMultimodal,
           persistedOutputLanguage,
@@ -563,7 +527,6 @@ export function SettingsView() {
           persistedGeneral,
           persistedZoom,
         ] = await Promise.allSettled([
-          loadLlmConfig(),
           loadEmbeddingConfig(),
           loadMultimodalConfig(),
           loadOutputLanguage(project?.id),
@@ -575,7 +538,6 @@ export function SettingsView() {
           loadGeneralConfig(),
           loadZoomLevel(),
         ] as const)
-        setLlmConfig(resultValue(persistedLlm, null) ?? llmConfig)
         setEmbeddingConfig(resultValue(persistedEmbedding, null) ?? embeddingConfig)
         setMultimodalConfig(resultValue(persistedMultimodal, null) ?? multimodalConfig)
         setOutputLanguage((resultValue(persistedOutputLanguage, null) ?? outputLanguage) as typeof outputLanguage)
@@ -595,7 +557,6 @@ export function SettingsView() {
   }, [
     draft,
     project,
-    llmConfig,
     embeddingConfig,
     multimodalConfig,
     outputLanguage,
@@ -606,7 +567,6 @@ export function SettingsView() {
     apiConfig,
     generalConfig,
     maxHistoryMessages,
-    setLlmConfig,
     setEmbeddingConfig,
     setMultimodalConfig,
     setOutputLanguage,
@@ -631,20 +591,18 @@ export function SettingsView() {
         return <LlmProviderSection />
       case "embedding":
         return <EmbeddingSection draft={draft} setDraft={setDraft} />
-      case "multimodal":
-        return <MultimodalSection draft={draft} setDraft={setDraft} />
-      case "web-search":
-        return <WebSearchSection />
-      case "network":
-        return <NetworkSection draft={draft} setDraft={setDraft} />
-      case "source-watch":
-        return <SourceWatchSection draft={draft} setDraft={setDraft} projectReady={!!project} />
       case "scheduled-import":
         return <ScheduledImportSection draft={draft} setDraft={setDraft} />
-      case "mineru":
-        return <MineruSection draft={draft} setDraft={setDraft} />
-      case "api-server":
-        return <ApiServerSection draft={draft} setDraft={setDraft} />
+      case "advanced":
+        return (
+          <div className="space-y-10">
+            <NetworkSection draft={draft} setDraft={setDraft} />
+            <SourceWatchSection draft={draft} setDraft={setDraft} projectReady={!!project} />
+            <MultimodalSection draft={draft} setDraft={setDraft} />
+            <MineruSection draft={draft} setDraft={setDraft} />
+            <ApiServerSection draft={draft} setDraft={setDraft} />
+          </div>
+        )
       case "output":
         return <OutputSection draft={draft} setDraft={setDraft} />
       case "interface":

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
-import { ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, XCircle, Plus, Trash2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, Loader2, XCircle } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { invoke } from "@tauri-apps/api/core"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useWikiStore, type LlmConfig, type ProviderOverride, type ReasoningConfig, type ReasoningMode } from "@/stores/wiki-store"
 import { availableLlmPresets, findLlmPreset, type LlmPreset } from "../llm-presets"
@@ -12,11 +11,19 @@ import { disabledLlmConfig, resolveConfig } from "../preset-resolver"
 import { normalizeEndpoint } from "@/lib/endpoint-normalizer"
 import { AZURE_OPENAI_API_VERSION } from "@/lib/azure-openai"
 import { testLlmConnection, testLlmFunction, type ProviderTestResult } from "@/lib/connection-tests"
-import { projectLlmProfile, resolveProjectLlmConfig } from "@/lib/llm-task-routing"
-import { saveProjectLlmOverride } from "@/lib/project-store"
+import { resolveProjectLlmConfig } from "@/lib/llm-task-routing"
 import { normalizeReasoningForProvider, resolveReasoningCapabilities } from "@/lib/reasoning-capabilities"
+import {
+  connectionTestErrorField,
+  codexOnlyPresets,
+} from "../model-hub-utils"
 
 const HTTP_HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+
+type ProviderTestState =
+  | { kind: "idle" }
+  | { kind: "running"; label: string }
+  | { kind: "done"; result: ProviderTestResult }
 
 export function llmHeadersToText(headers: Record<string, string> | undefined): string {
   return Object.entries(headers ?? {}).map(([name, value]) => `${name}: ${value}`).join("\n")
@@ -41,25 +48,14 @@ export function LlmProviderSection() {
   const providerConfigs = useWikiStore((s) => s.providerConfigs)
   const setProviderConfigs = useWikiStore((s) => s.setProviderConfigs)
   const customLlmPresets = useWikiStore((s) => s.customLlmPresets)
-  const setCustomLlmPresets = useWikiStore((s) => s.setCustomLlmPresets)
   const activePresetId = useWikiStore((s) => s.activePresetId)
-  const setActivePresetId = useWikiStore((s) => s.setActivePresetId)
   const setLlmConfig = useWikiStore((s) => s.setLlmConfig)
   const globalLlmConfig = useWikiStore((s) => s.globalLlmConfig)
   const setGlobalLlmConfig = useWikiStore((s) => s.setGlobalLlmConfig)
-  const project = useWikiStore((s) => s.project)
   const projectLlmOverride = useWikiStore((s) => s.projectLlmOverride)
-  const setProjectLlmOverride = useWikiStore((s) => s.setProjectLlmOverride)
-  const taskModelRouting = useWikiStore((s) => s.taskModelRouting)
-  const setTaskModelRouting = useWikiStore((s) => s.setTaskModelRouting)
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [savedId, setSavedId] = useState<string | null>(null)
-  const presets = useMemo(() => availableLlmPresets(customLlmPresets), [customLlmPresets])
-
-  function toggleExpand(id: string) {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }))
-  }
+  const [lastTestByPreset, setLastTestByPreset] = useState<Record<string, ProviderTestState>>({})
+  const codexPreset = codexOnlyPresets(availableLlmPresets([]))[0]!
 
   async function persist(newConfigs: typeof providerConfigs, newActive: string | null) {
     const { saveProviderConfigs, saveActivePresetId, saveLlmConfig } = await import(
@@ -104,236 +100,32 @@ export function LlmProviderSection() {
         setLlmConfig(resolveProjectLlmConfig(resolved, next, projectLlmOverride, customLlmPresets))
       }
     }
-    setSavedId(id)
-    setTimeout(() => setSavedId((cur) => (cur === id ? null : cur)), 1500)
   }
 
-  function toggleActive(id: string) {
-    const state = useWikiStore.getState()
-    const next = id === state.activePresetId ? null : id
-    setActivePresetId(next)
-    persist(state.providerConfigs, next).catch(() => {})
+  function updateProviderTest(id: string, state: ProviderTestState) {
+    setLastTestByPreset((current) => ({ ...current, [id]: state }))
   }
 
-  async function updateTaskRouting(task: "chat" | "ingest", value: string) {
-    const next = {
-      ...taskModelRouting,
-      [task === "chat" ? "chatPresetId" : "ingestPresetId"]: value || null,
-    }
-    setTaskModelRouting(next)
-    const { saveTaskModelRouting } = await import("@/lib/project-store")
-    await saveTaskModelRouting(next)
-  }
-
-  async function addCustomPreset() {
-    const current = useWikiStore.getState().customLlmPresets
-    if (current.length >= 50) return
-    const id = `custom-${crypto.randomUUID()}`
-    const next = [...current, {
-      id,
-      label: t("settings.sections.llm.customProfiles.defaultName", {
-        number: current.length + 1,
-      }),
-    }]
-    setCustomLlmPresets(next)
-    setExpanded((current) => ({ ...current, [id]: true }))
-    const { saveCustomLlmPresets } = await import("@/lib/project-store")
-    await saveCustomLlmPresets(next)
-  }
-
-  async function renameCustomPreset(id: string, label: string) {
-    const trimmed = label.trim()
-    if (!trimmed) return
-    const next = useWikiStore.getState().customLlmPresets
-      .map((preset) => preset.id === id ? { ...preset, label: trimmed.slice(0, 80) } : preset)
-    setCustomLlmPresets(next)
-    const { saveCustomLlmPresets } = await import("@/lib/project-store")
-    await saveCustomLlmPresets(next)
-  }
-
-  async function deleteCustomPreset(id: string) {
-    const state = useWikiStore.getState()
-    if (state.activePresetId === id) return
-    const nextPresets = state.customLlmPresets.filter((preset) => preset.id !== id)
-    const { [id]: _removed, ...nextConfigs } = state.providerConfigs
-    const nextRouting = {
-      chatPresetId: state.taskModelRouting.chatPresetId === id ? null : state.taskModelRouting.chatPresetId,
-      ingestPresetId: state.taskModelRouting.ingestPresetId === id ? null : state.taskModelRouting.ingestPresetId,
-    }
-    setCustomLlmPresets(nextPresets)
-    setProviderConfigs(nextConfigs)
-    setTaskModelRouting(nextRouting)
-    const { saveCustomLlmPresets, saveProviderConfigs, saveTaskModelRouting } = await import("@/lib/project-store")
-    await Promise.all([
-      saveCustomLlmPresets(nextPresets),
-      saveProviderConfigs(nextConfigs),
-      saveTaskModelRouting(nextRouting),
-    ])
-    if (project && state.projectLlmOverride.presetId === id) {
-      await updateProjectOverride({ enabled: false, presetId: null, model: "" })
-    }
-  }
-
-  async function updateProjectOverride(patch: Partial<typeof projectLlmOverride>) {
-    if (!project) return
-    // Read the latest snapshot synchronously. Multiple input events can arrive
-    // before React re-renders this closure; using the captured value would
-    // discard fields changed by the preceding event.
-    const state = useWikiStore.getState()
-    const current = state.projectLlmOverride
-    const draft = { ...current, ...patch }
-    const resolved = resolveProjectLlmConfig(
-      state.globalLlmConfig,
-      state.providerConfigs,
-      draft,
-      state.customLlmPresets,
+  function renderPreset(preset: LlmPreset) {
+    return (
+      <PresetRow
+        key={preset.id}
+        preset={preset}
+        override={providerConfigs[preset.id]}
+        latestTest={lastTestByPreset[preset.id]}
+        onTestState={(state) => updateProviderTest(preset.id, state)}
+        onChange={(patch) => updateOverride(preset.id, patch)}
+      />
     )
-    const next = { ...draft, profile: draft.enabled ? projectLlmProfile(resolved) : undefined }
-    setProjectLlmOverride(next)
-    setLlmConfig(resolved)
-    await saveProjectLlmOverride(project.id, next)
   }
 
   return (
     <div className="space-y-4">
-      <div>
+      <header>
         <h2 className="text-xl font-semibold">{t("settings.sections.llm.title")}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t("settings.sections.llm.description")}
-        </p>
-      </div>
-
-      {project && (
-        <div className="space-y-3 rounded-md border bg-muted/20 p-3">
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <input
-              type="checkbox"
-              checked={projectLlmOverride.enabled}
-              onChange={(event) => void updateProjectOverride({ enabled: event.target.checked }).catch((error) => {
-                console.error("Failed to save project model override:", error)
-              })}
-            />
-            {t("settings.sections.llm.projectOverride.enabled")}
-          </label>
-          {projectLlmOverride.enabled && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TaskModelSelect
-                id="project-llm-preset"
-                label={t("settings.sections.llm.projectOverride.provider")}
-                value={projectLlmOverride.presetId ?? ""}
-                onChange={(value) => void updateProjectOverride({ presetId: value || null }).catch((error) => {
-                  console.error("Failed to save project provider:", error)
-                })}
-                fallbackLabel={t("settings.sections.llm.projectOverride.selectProvider")}
-                presets={presets}
-              />
-              <div className="space-y-1.5">
-                <Label htmlFor="project-llm-model">{t("settings.sections.llm.projectOverride.model")}</Label>
-                <Input
-                  id="project-llm-model"
-                  value={projectLlmOverride.model}
-                  placeholder={t("settings.sections.llm.projectOverride.modelPlaceholder")}
-                  onChange={(event) => void updateProjectOverride({ model: event.target.value }).catch((error) => {
-                    console.error("Failed to save project model:", error)
-                  })}
-                />
-              </div>
-            </div>
-          )}
-          <p className="text-xs text-muted-foreground">
-            {t("settings.sections.llm.projectOverride.hint")}
-          </p>
-        </div>
-      )}
-
-      <div className="grid gap-3 rounded-md border bg-muted/20 p-3 sm:grid-cols-2">
-        <TaskModelSelect
-          id="chat-task-model"
-          label={t("settings.sections.llm.taskRouting.chat")}
-          value={taskModelRouting.chatPresetId ?? ""}
-          onChange={(value) => void updateTaskRouting("chat", value).catch((error) => {
-            console.error("Failed to save chat model routing:", error)
-          })}
-          fallbackLabel={t("settings.sections.llm.taskRouting.activeDefault")}
-          presets={presets}
-        />
-        <TaskModelSelect
-          id="ingest-task-model"
-          label={t("settings.sections.llm.taskRouting.ingest")}
-          value={taskModelRouting.ingestPresetId ?? ""}
-          onChange={(value) => void updateTaskRouting("ingest", value).catch((error) => {
-            console.error("Failed to save ingest model routing:", error)
-          })}
-          fallbackLabel={t("settings.sections.llm.taskRouting.activeDefault")}
-          presets={presets}
-        />
-        <p className="text-xs text-muted-foreground sm:col-span-2">
-          {t("settings.sections.llm.taskRouting.hint")}
-        </p>
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void addCustomPreset()}
-            disabled={customLlmPresets.length >= 50}
-          >
-            <Plus className="mr-1 h-4 w-4" />
-            {t("settings.sections.llm.customProfiles.add")}
-          </Button>
-        </div>
-        {presets.map((preset) => (
-          <PresetRow
-            key={preset.id}
-            preset={preset}
-            override={providerConfigs[preset.id]}
-            isActive={activePresetId === preset.id}
-            isExpanded={!!expanded[preset.id]}
-            savedHere={savedId === preset.id}
-            onToggleActive={() => toggleActive(preset.id)}
-            onToggleExpand={() => toggleExpand(preset.id)}
-            onChange={(patch) => updateOverride(preset.id, patch)}
-            isUserCustom={preset.id.startsWith("custom-")}
-            onRename={(label) => void renameCustomPreset(preset.id, label)}
-            onDelete={() => void deleteCustomPreset(preset.id)}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function TaskModelSelect({
-  id,
-  label,
-  value,
-  onChange,
-  fallbackLabel,
-  presets,
-}: {
-  id: string
-  label: string
-  value: string
-  onChange: (value: string) => void
-  fallbackLabel: string
-  presets: LlmPreset[]
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id}>{label}</Label>
-      <select
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-      >
-        <option value="">{fallbackLabel}</option>
-        {presets.map((preset) => (
-          <option key={preset.id} value={preset.id}>{preset.label}</option>
-        ))}
-      </select>
+        <p className="mt-1 text-sm text-muted-foreground">{t("settings.sections.llm.description")}</p>
+      </header>
+      {renderPreset(codexPreset)}
     </div>
   )
 }
@@ -341,34 +133,17 @@ function TaskModelSelect({
 interface PresetRowProps {
   preset: LlmPreset
   override: ProviderOverride | undefined
-  isActive: boolean
-  isExpanded: boolean
-  savedHere: boolean
-  onToggleActive: () => void
-  onToggleExpand: () => void
+  latestTest: ProviderTestState | undefined
+  onTestState: (state: ProviderTestState) => void
   onChange: (patch: ProviderOverride) => void
-  isUserCustom: boolean
-  onRename: (label: string) => void
-  onDelete: () => void
 }
-
-type ProviderTestState =
-  | { kind: "idle" }
-  | { kind: "running"; label: string }
-  | { kind: "done"; result: ProviderTestResult }
 
 function PresetRow({
   preset,
   override,
-  isActive,
-  isExpanded,
-  savedHere,
-  onToggleActive,
-  onToggleExpand,
+  latestTest,
+  onTestState,
   onChange,
-  isUserCustom,
-  onRename,
-  onDelete,
 }: PresetRowProps) {
   const { t } = useTranslation()
   const ov = override ?? {}
@@ -388,9 +163,6 @@ function PresetRow({
   const streamingEnabled = ov.streamingEnabled !== false
   const [headersText, setHeadersText] = useState(() => llmHeadersToText(ov.customHeaders))
   const isLocalCliProvider = preset.provider === "claude-code" || preset.provider === "codex-cli"
-  const [testState, setTestState] = useState<ProviderTestState>({ kind: "idle" })
-  const hasConfig = !!apiKey || !!ov.baseUrl || !!ov.model || !!ov.azureApiVersion || !!ov.azureModelFamily
-    || Object.keys(ov.customHeaders ?? {}).length > 0 || ov.streamingEnabled === false
   // Local CLI providers authenticate via their own existing login state
   // (inherited by the spawned subprocess), so no API key field is shown.
   // Ollama ditto for its local-only model.
@@ -403,105 +175,67 @@ function PresetRow({
     () => resolveConfig(preset, ov, useWikiStore.getState().globalLlmConfig),
     [apiKey, apiMode, azureApiVersion, azureModelFamily, baseUrl, context, model, preset, reasoning, ov],
   )
+  const testErrorField = latestTest?.kind === "done" && !latestTest.result.ok
+    ? connectionTestErrorField(latestTest.result.message)
+    : null
+  const testErrorMessage = testErrorField === "model"
+    ? t("settings.sections.llm.validation.model", "请先填写模型名称，再测试连接。")
+    : testErrorField === "apiKey"
+      ? t("settings.sections.llm.validation.apiKey", "请先填写 API Key，再测试连接。")
+      : testErrorField === "endpoint"
+        ? t("settings.sections.llm.validation.endpoint", "请先填写服务地址，再测试连接。")
+        : undefined
 
   async function runProviderTest(kind: "connection" | "function") {
-    setTestState({
+    const running: ProviderTestState = {
       kind: "running",
       label: kind === "connection"
         ? t("settings.sections.llm.testingConnection")
         : t("settings.sections.llm.testingFunction"),
-    })
+    }
+    onTestState(running)
     const result = kind === "connection"
       ? await testLlmConnection(resolvedConfig)
       : await testLlmFunction(resolvedConfig)
-    setTestState({ kind: "done", result })
+    const done: ProviderTestState = { kind: "done", result }
+    onTestState(done)
   }
 
-  return (
-    <div
-      className={`rounded-lg border transition-colors ${
-        isActive ? "border-primary/60 bg-primary/5" : "border-border"
-      }`}
-    >
-      {/* Outer row — always visible */}
-      <div className="flex items-center gap-3 px-3 py-2.5">
+  const testControls = (
+    <div className="space-y-2 rounded-md border p-3">
+      <div>
+        <div className="text-sm font-medium">{t("settings.sections.llm.providerTests")}</div>
+        <p className="mt-1 text-xs text-muted-foreground">{t("settings.sections.llm.providerTestsHint")}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={onToggleExpand}
-          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent"
-          title={isExpanded ? t("settings.sections.llm.collapse") : t("settings.sections.llm.expand")}
+          onClick={() => void runProviderTest("connection")}
+          disabled={(latestTest?.kind ?? "idle") === "running"}
+          className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isExpanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+          {t("settings.sections.llm.testConnection")}
         </button>
-
         <button
           type="button"
-          onClick={onToggleExpand}
-          className="min-w-0 flex-1 text-left"
+          onClick={() => void runProviderTest("function")}
+          disabled={(latestTest?.kind ?? "idle") === "running"}
+          className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-medium">{preset.label}</span>
-            {hasConfig && !isActive && (
-              <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {t("settings.sections.llm.configuredBadge")}
-              </span>
-            )}
-            {isActive && (
-              <span className="shrink-0 rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                {t("settings.sections.llm.activeBadge")}
-              </span>
-            )}
-            {savedHere && (
-              <span className="shrink-0 text-[10px] text-emerald-600">{t("settings.sections.llm.savedBadge")}</span>
-            )}
-          </div>
-          {preset.hint && (
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {preset.hint}
-            </div>
-          )}
-        </button>
-
-        {/* Toggle switch */}
-        <button
-          type="button"
-          onClick={onToggleActive}
-          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors ${
-            isActive
-              ? "border-primary bg-primary"
-              : "border-muted-foreground/30 bg-muted-foreground/20 hover:bg-muted-foreground/30"
-          }`}
-          title={isActive ? t("settings.sections.llm.toggleOff") : t("settings.sections.llm.toggleOn")}
-          aria-label={isActive ? t("settings.sections.llm.deactivate") : t("settings.sections.llm.activate")}
-        >
-          <span
-            className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm ring-1 ring-black/10 transition-transform ${
-              isActive ? "translate-x-4" : "translate-x-0.5"
-            }`}
-          />
+          {t("settings.sections.llm.testFunction")}
         </button>
       </div>
+      {latestTest?.kind === "running" && <p className="text-xs text-muted-foreground">{latestTest.label}</p>}
+      {latestTest?.kind === "done" && (
+        <div className={`rounded-md border px-3 py-2 text-xs ${latestTest.result.ok ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400" : "border-destructive/40 bg-destructive/5 text-destructive"}`}>
+          {latestTest.result.message}
+        </div>
+      )}
+    </div>
+  )
 
-      {/* Expanded config panel */}
-      {isExpanded && (
-        <div className="space-y-4 border-t bg-background/50 px-4 py-3">
-          {isUserCustom && (
-            <div className="space-y-2">
-              <Label>{t("settings.sections.llm.customProfiles.name")}</Label>
-              <Input
-                defaultValue={preset.label}
-                maxLength={80}
-                onBlur={(event) => {
-                  if (!event.target.value.trim()) event.target.value = preset.label
-                  else onRename(event.target.value)
-                }}
-              />
-            </div>
-          )}
+  return (
+    <div className="space-y-4">
           {preset.provider === "custom" && (
             <div className="space-y-2">
               <Label>{t("settings.sections.llm.apiMode")}</Label>
@@ -548,6 +282,7 @@ function PresetRow({
               mode={preset.provider === "azure" ? "azure" : apiMode}
               placeholder={preset.baseUrl ?? "https://your-api.example.com/v1"}
               onChange={(v) => onChange({ baseUrl: v })}
+              error={testErrorField === "endpoint" ? testErrorMessage : undefined}
             />
           )}
 
@@ -584,6 +319,12 @@ function PresetRow({
           {preset.provider === "claude-code" && <ClaudeCliStatusPill />}
           {preset.provider === "codex-cli" && <CodexCliStatusPill />}
 
+          {isLocalCliProvider && (
+            <details className="rounded-md border p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                {t("settings.sections.llm.advancedCli", "CLI 高级设置")}
+              </summary>
+              <div className="mt-3 space-y-4">
           {isLocalCliProvider && (
             <div className="space-y-2 rounded-md border p-3">
               <div className="flex items-start justify-between gap-3">
@@ -653,6 +394,9 @@ function PresetRow({
               </p>
             </div>
           )}
+              </div>
+            </details>
+          )}
 
           {needsApiKey && (
             <div className="space-y-2">
@@ -660,6 +404,7 @@ function PresetRow({
               <Input
                 type="password"
                 value={apiKey}
+                aria-invalid={testErrorField === "apiKey"}
                 onChange={(e) => onChange({ apiKey: e.target.value })}
                 placeholder={
                   preset.provider === "custom"
@@ -667,13 +412,14 @@ function PresetRow({
                     : t("settings.sections.llm.apiKeyPlaceholder")
                 }
               />
+              {testErrorField === "apiKey" && <p className="text-xs text-destructive">{testErrorMessage}</p>}
             </div>
           )}
 
           <div className="space-y-2">
             <Label>
               {preset.provider === "azure"
-                ? t("settings.sections.llm.deploymentName", "Deployment name")
+                ? t("settings.sections.llm.deploymentName", "部署名称")
                 : t("settings.model")}
             </Label>
             <ModelPicker
@@ -681,9 +427,17 @@ function PresetRow({
               suggestions={preset.suggestedModels ?? []}
               placeholder={preset.defaultModel ?? "e.g. gpt-4o"}
               onChange={(v) => onChange({ model: v })}
+              error={testErrorField === "model" ? testErrorMessage : undefined}
             />
           </div>
 
+          {testControls}
+
+          <details className="rounded-md border p-3">
+            <summary className="cursor-pointer text-sm font-medium">
+              {t("settings.sections.llm.advancedSettings", "高级设置")}
+            </summary>
+            <div className="mt-3 space-y-4">
           <div className="space-y-2">
             <Label>{t("settings.sections.llm.contextWindow")}</Label>
             <ContextSizeSelector
@@ -749,7 +503,7 @@ function PresetRow({
               </p>
             </div>
             <div className="space-y-2">
-              <Label>{t("settings.sections.llm.requestTimeout", "Request timeout (minutes)")}</Label>
+              <Label>{t("settings.sections.llm.requestTimeout", "请求超时时间（分钟）")}</Label>
               <Input
                 type="number"
                 min={1}
@@ -760,7 +514,7 @@ function PresetRow({
                 })}
               />
               <p className="text-xs text-muted-foreground">
-                {t("settings.sections.llm.requestTimeoutHint", "Increase this for slow local CPU models. The default is 30 minutes.")}
+                {t("settings.sections.llm.requestTimeoutHint", "本地 CPU 模型较慢时可适当调大，默认 30 分钟。")}
               </p>
             </div>
             </>
@@ -779,60 +533,10 @@ function PresetRow({
             title={t("settings.sections.llm.reasoning.ingestTitle")}
             hint={t("settings.sections.llm.reasoning.ingestHint")}
           />
+            </div>
+          </details>
 
-          <div className="space-y-2 rounded-md border p-3">
-            <div>
-              <div className="text-sm font-medium">
-                {t("settings.sections.llm.providerTests")}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("settings.sections.llm.providerTestsHint")}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => void runProviderTest("connection")}
-                disabled={testState.kind === "running"}
-                className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {t("settings.sections.llm.testConnection")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void runProviderTest("function")}
-                disabled={testState.kind === "running"}
-                className="rounded-md border px-3 py-1.5 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {t("settings.sections.llm.testFunction")}
-              </button>
-            </div>
-            {testState.kind === "running" && (
-              <p className="text-xs text-muted-foreground">{testState.label}</p>
-            )}
-            {testState.kind === "done" && (
-              <div
-                className={`rounded-md border px-3 py-2 text-xs ${
-                  testState.result.ok
-                    ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
-                    : "border-destructive/40 bg-destructive/5 text-destructive"
-                }`}
-              >
-                {testState.result.message}
-              </div>
-            )}
-          </div>
-          {isUserCustom && (
-            <div className="flex justify-end border-t pt-3">
-              <Button variant="outline" size="sm" onClick={onDelete} disabled={isActive}>
-                <Trash2 className="mr-1 h-4 w-4" />
-                {t("settings.sections.llm.customProfiles.delete")}
-              </Button>
-            </div>
-          )}
         </div>
-      )}
-    </div>
   )
 }
 
@@ -931,6 +635,7 @@ interface EndpointFieldProps {
   mode: "chat_completions" | "anthropic_messages" | "azure"
   placeholder: string
   onChange: (value: string) => void
+  error?: string
 }
 
 /**
@@ -939,7 +644,7 @@ interface EndpointFieldProps {
  * they're typing; the input doesn't nag — it just shows the preview. On
  * blur, if normalization would change the value, we apply it.
  */
-function EndpointField({ value, mode, placeholder, onChange }: EndpointFieldProps) {
+function EndpointField({ value, mode, placeholder, onChange, error }: EndpointFieldProps) {
   const { t } = useTranslation()
   const preview = useMemo(() => normalizeEndpoint(value, mode), [value, mode])
 
@@ -959,7 +664,9 @@ function EndpointField({ value, mode, placeholder, onChange }: EndpointFieldProp
         onChange={(e) => onChange(e.target.value)}
         onBlur={handleBlur}
         placeholder={placeholder}
+        aria-invalid={!!error}
       />
+      {error && <p className="text-xs text-destructive">{error}</p>}
       {showHint && (
         <div
           className={`flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-xs ${
@@ -998,6 +705,7 @@ interface ModelPickerProps {
   suggestions: string[]
   placeholder: string
   onChange: (value: string) => void
+  error?: string
 }
 
 /**
@@ -1010,7 +718,7 @@ interface ModelPickerProps {
  * model is active without reading the text field. Presets with no
  * `suggestedModels` render the input alone.
  */
-function ModelPicker({ value, suggestions, placeholder, onChange }: ModelPickerProps) {
+function ModelPicker({ value, suggestions, placeholder, onChange, error }: ModelPickerProps) {
   const { t } = useTranslation()
   const hasSuggestions = suggestions.length > 0
   const isCustom = hasSuggestions && value.length > 0 && !suggestions.includes(value)
@@ -1057,7 +765,9 @@ function ModelPicker({ value, suggestions, placeholder, onChange }: ModelPickerP
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        aria-invalid={!!error}
       />
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   )
 }

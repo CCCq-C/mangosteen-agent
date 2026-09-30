@@ -77,10 +77,18 @@ struct SkillRoot {
 }
 
 fn skill_roots(project_path: &str) -> Vec<SkillRoot> {
-    let mut roots = vec![SkillRoot {
-        path: Path::new(project_path).join(".llm-wiki").join("skills"),
-        source: "project".to_string(),
-    }];
+    let mut roots = vec![
+        SkillRoot {
+            path: Path::new(project_path).join(".llm-wiki").join("skills"),
+            source: "project".to_string(),
+        },
+        SkillRoot {
+            // The ModelScope installer follows the open Agent Skills convention
+            // and writes project-local skills here. Keep it in the project scope.
+            path: Path::new(project_path).join(".agents").join("skills"),
+            source: "project".to_string(),
+        },
+    ];
     if let Some(home) = home_dir() {
         roots.push(SkillRoot {
             path: home.join(".claude").join("skills"),
@@ -537,6 +545,24 @@ mod tests {
         )));
         let loaded = load_project_skills(root.to_str().unwrap(), &["illustrator".to_string()]);
         assert_eq!(loaded[0].name, "illustrator");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn list_available_skills_reads_project_agents_skills() {
+        let root = std::env::temp_dir().join(format!("llm-wiki-skills-{}", Uuid::new_v4()));
+        let skill_dir = root.join(".agents").join("skills").join("modelscope-pdf");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: modelscope-pdf\ndescription: Read PDFs from ModelScope\n---\nUse the ModelScope PDF workflow.",
+        )
+        .unwrap();
+
+        let skills = list_available_skills(root.to_str().unwrap());
+        assert!(skills
+            .iter()
+            .any(|skill| { skill.id == "modelscope-pdf" && skill.source == "project" }));
         let _ = fs::remove_dir_all(root);
     }
 

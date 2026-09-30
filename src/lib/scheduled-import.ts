@@ -154,9 +154,9 @@ function notifyManagedScheduledImportPath(project: WikiProject, importRoot: stri
   managedPathWarningKeys.add(key)
   useActivityStore.getState().addItem({
     type: "ingest",
-    title: "Scheduled import skipped",
+    title: "已跳过定时导入",
     status: "error",
-    detail: `Scheduled import path is inside or contains the current LLM Wiki project: ${importRoot}. Choose an external folder; project sources are handled by source folder monitoring.`,
+    detail: `定时导入路径位于当前知识库项目内部或包含当前项目：${importRoot}。请选择外部文件夹；项目资料由资料文件夹监控负责。`,
     filesWritten: [],
   })
 }

@@ -206,7 +206,7 @@ export function MaintenanceSection() {
 
   const handleExportProject = useCallback(async () => {
     if (!project) return
-    const destination = await save({ defaultPath: `${project.name}.llmwiki.zip`, filters: [{ name: "LLM Wiki project", extensions: ["zip"] }] })
+    const destination = await save({ defaultPath: `${project.name}.llmwiki.zip`, filters: [{ name: "山竹智能体项目", extensions: ["zip"] }] })
     if (!destination) return
     setProjectToolBusy(true)
     try {
@@ -216,7 +216,7 @@ export function MaintenanceSection() {
   }, [project, t])
 
   const handleImportProject = useCallback(async () => {
-    const archive = await open({ multiple: false, filters: [{ name: "LLM Wiki project", extensions: ["zip"] }] })
+    const archive = await open({ multiple: false, filters: [{ name: "山竹智能体项目", extensions: ["zip"] }] })
     if (!archive || Array.isArray(archive)) return
     const destination = await open({ directory: true, multiple: false, createDirectories: true })
     if (!destination || Array.isArray(destination)) return
@@ -387,12 +387,12 @@ export function MaintenanceSection() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">
-          {t("settings.sections.maintenance.title", { defaultValue: "Maintenance" })}
+          {t("settings.sections.maintenance.title", { defaultValue: "维护" })}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.maintenance.description", {
             defaultValue:
-              "Tools for cleaning up the wiki — detect and merge duplicate entities/concepts that the LLM created under different names across re-ingests.",
+              "清理知识库的工具：找出并合并因重复整理而产生的同义实体或概念。",
           })}
         </p>
       </div>
@@ -506,28 +506,28 @@ export function MaintenanceSection() {
           <Wrench className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">
             {t("settings.sections.maintenance.dedup.title", {
-              defaultValue: "Detect duplicate entities / concepts",
+              defaultValue: "检测重复实体或概念",
             })}
           </h3>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
           {t("settings.sections.maintenance.dedup.description", {
             defaultValue:
-              "Asks the LLM to scan all entity / concept pages and group ones that likely refer to the same topic under different names (English vs Chinese, plural vs singular, abbreviation vs full form). You confirm each group before merging. Merges are queued and run one at a time so cross-references stay consistent.",
+              "让大模型扫描全部实体和概念页面，找出名称不同但可能指向同一主题的内容（如中英文名称、单复数、简称与全称）。每组内容都需你确认后才会合并，并会逐项处理以保持引用一致。",
           })}
         </p>
 
         {!projectReady && (
           <p className="text-xs text-amber-700 dark:text-amber-400">
             {t("settings.sections.maintenance.noProject", {
-              defaultValue: "Open a project first.",
+              defaultValue: "请先打开一个项目。",
             })}
           </p>
         )}
         {projectReady && !llmReady && (
           <p className="text-xs text-amber-700 dark:text-amber-400">
             {t("settings.sections.maintenance.noLlm", {
-              defaultValue: "Configure an LLM provider first.",
+              defaultValue: "请先配置大模型服务。",
             })}
           </p>
         )}
@@ -540,12 +540,12 @@ export function MaintenanceSection() {
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {t("settings.sections.maintenance.dedup.scanning", {
-                defaultValue: "Scanning…",
+                defaultValue: "扫描中……",
               })}
             </>
           ) : (
             t("settings.sections.maintenance.dedup.scanButton", {
-              defaultValue: "Scan for duplicates",
+              defaultValue: "扫描重复项",
             })
           )}
         </Button>
@@ -562,7 +562,7 @@ export function MaintenanceSection() {
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <div>
               {t("settings.sections.maintenance.dedup.noneFound", {
-                defaultValue: "No duplicate groups found. The wiki is clean.",
+                defaultValue: "未发现重复分组，知识库很干净。",
               })}
             </div>
           </div>
@@ -662,14 +662,14 @@ function QueueOrphanList({
         <Clock className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-semibold">
           {t("settings.sections.maintenance.dedup.queueTitle", {
-            defaultValue: "In-progress merges",
+            defaultValue: "进行中的合并",
           })}
         </h3>
       </div>
       <p className="text-xs text-muted-foreground">
         {t("settings.sections.maintenance.dedup.queueDescription", {
           defaultValue:
-            "Tasks queued from a previous scan that haven't finished yet. Merges run one at a time.",
+            "上次扫描中尚未完成的任务。合并会逐项执行。",
         })}
       </p>
       {restoredBacklogWaiting && (
@@ -677,13 +677,13 @@ function QueueOrphanList({
           <span className="text-amber-800 dark:text-amber-300">
             {t("settings.sections.maintenance.dedup.restoredBacklog", {
               defaultValue:
-                "These merge tasks were restored from the previous session and are paused to avoid unexpected LLM usage.",
+                "这些合并任务已从上次会话恢复。为避免意外消耗大模型额度，目前处于暂停状态。",
             })}
           </span>
           <Button size="sm" variant="secondary" onClick={onResumeRestored}>
             <RotateCcw className="h-3.5 w-3.5" />
             {t("settings.sections.maintenance.dedup.resumeRestored", {
-              defaultValue: "Resume merges",
+              defaultValue: "继续合并",
             })}
           </Button>
         </div>
@@ -711,14 +711,14 @@ function QueueOrphanList({
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 {t("settings.sections.maintenance.dedup.retry", {
-                  defaultValue: "Retry",
+                  defaultValue: "重试",
                 })}
               </Button>
             )}
             <Button size="sm" variant="ghost" onClick={() => onCancel(task.id)}>
               <Trash2 className="h-3.5 w-3.5" />
               {t("settings.sections.maintenance.dedup.delete", {
-                defaultValue: "Delete",
+                defaultValue: "删除",
               })}
             </Button>
           </span>
@@ -745,7 +745,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
       <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-400">
         <Loader2 className="h-3 w-3 animate-spin" />
         {t("settings.sections.maintenance.dedup.merging", {
-          defaultValue: "Merging…",
+          defaultValue: "合并中……",
         })}
       </span>
     )
@@ -755,7 +755,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
       return (
         <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
           {t("settings.sections.maintenance.dedup.queued", {
-            defaultValue: "Queued",
+            defaultValue: "排队中",
           })}
         </span>
       )
@@ -763,7 +763,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
     return (
       <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
         {t("settings.sections.maintenance.dedup.queuedAhead", {
-          defaultValue: "Queued ({{n}} ahead)",
+          defaultValue: "排队中（前面还有 {{n}} 个）",
           n: pendingPosition,
         })}
       </span>
@@ -774,7 +774,7 @@ function TaskStatusChip({ task, pendingPosition }: ChipProps) {
       <span className="inline-flex items-center gap-1 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-rose-700 dark:text-rose-400">
         <AlertTriangle className="h-3 w-3" />
         {t("settings.sections.maintenance.dedup.failed", {
-          defaultValue: "Failed ({{retries}}/3)",
+          defaultValue: "失败（{{retries}}/3）",
           retries: task.retryCount,
         })}
       </span>
@@ -808,6 +808,7 @@ function DuplicateGroupCard({
 }: CardProps) {
   const { t } = useTranslation()
   const { group, canonicalSlug, skipped } = entry
+  const confidenceLabel = group.confidence === "high" ? "高可信" : group.confidence === "medium" ? "中可信" : "低可信"
 
   const inFlight = !!task && (task.status === "pending" || task.status === "processing")
   const failed = !!task && task.status === "failed"
@@ -828,23 +829,23 @@ function DuplicateGroupCard({
     >
       <div className="flex items-center gap-2">
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${confidenceClass}`}>
-          {group.confidence}
+          {confidenceLabel}
         </span>
         <span className="text-xs text-muted-foreground">
           {t("settings.sections.maintenance.dedup.candidates", {
-            defaultValue: "{{n}} candidates",
+            defaultValue: "{{n}} 个候选项",
             n: group.slugs.length,
           })}
         </span>
         {merged && (
           <span className="ml-auto inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            {t("settings.sections.maintenance.dedup.merged", { defaultValue: "Merged" })}
+            {t("settings.sections.maintenance.dedup.merged", { defaultValue: "已合并" })}
           </span>
         )}
         {skipped && (
           <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
-            {t("settings.sections.maintenance.dedup.skipped", { defaultValue: "Marked not duplicates" })}
+            {t("settings.sections.maintenance.dedup.skipped", { defaultValue: "已标记为不重复" })}
           </span>
         )}
         {task && !finished && (
@@ -863,7 +864,7 @@ function DuplicateGroupCard({
           <div className="space-y-1.5">
             <Label className="text-xs">
               {t("settings.sections.maintenance.dedup.canonicalLabel", {
-                defaultValue: "Keep this slug as canonical:",
+                defaultValue: "保留以下页面标识作为主条目：",
               })}
             </Label>
             {group.slugs.map((slug) => (
@@ -888,13 +889,13 @@ function DuplicateGroupCard({
               <>
                 <Button size="sm" onClick={onEnqueue}>
                   {t("settings.sections.maintenance.dedup.mergeButton", {
-                    defaultValue: "Merge into {{slug}}",
+                    defaultValue: "合并到 {{slug}}",
                     slug: canonicalSlug,
                   })}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onNotDuplicate}>
                   {t("settings.sections.maintenance.dedup.notDuplicates", {
-                    defaultValue: "Not duplicates",
+                    defaultValue: "不是重复项",
                   })}
                 </Button>
               </>
@@ -903,7 +904,7 @@ function DuplicateGroupCard({
               <Button size="sm" variant="ghost" onClick={onCancel}>
                 <Trash2 className="h-3.5 w-3.5" />
                 {t("settings.sections.maintenance.dedup.cancel", {
-                  defaultValue: "Cancel",
+                  defaultValue: "取消",
                 })}
               </Button>
             )}
@@ -912,13 +913,13 @@ function DuplicateGroupCard({
                 <Button size="sm" onClick={onRetry}>
                   <RotateCcw className="h-3.5 w-3.5" />
                   {t("settings.sections.maintenance.dedup.retry", {
-                    defaultValue: "Retry",
+                    defaultValue: "重试",
                   })}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={onCancel}>
                   <Trash2 className="h-3.5 w-3.5" />
                   {t("settings.sections.maintenance.dedup.delete", {
-                    defaultValue: "Delete",
+                    defaultValue: "删除",
                   })}
                 </Button>
               </>

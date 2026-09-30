@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createDirectory: vi.fn(),
   deleteFile: vi.fn(),
   fileExists: vi.fn(),
+  getFileMd5: vi.fn(),
   getFileSize: vi.fn(),
   listDirectory: vi.fn(),
   preprocessFile: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/commands/fs", async () => {
     createDirectory: mocks.createDirectory,
     deleteFile: mocks.deleteFile,
     fileExists: mocks.fileExists,
+    getFileMd5: mocks.getFileMd5,
     getFileSize: mocks.getFileSize,
     listDirectory: mocks.listDirectory,
     preprocessFile: mocks.preprocessFile,
@@ -35,6 +37,7 @@ import {
   importSourceFiles,
   importSourceFolder,
   isIngestableSourcePath,
+  sourceImportPathsFromMessage,
 } from "./source-lifecycle"
 
 beforeEach(() => {
@@ -43,6 +46,7 @@ beforeEach(() => {
   mocks.createDirectory.mockResolvedValue(undefined)
   mocks.deleteFile.mockResolvedValue(undefined)
   mocks.fileExists.mockResolvedValue(false)
+  mocks.getFileMd5.mockResolvedValue("md5")
   mocks.getFileSize.mockResolvedValue(1024)
   mocks.listDirectory.mockResolvedValue([])
   mocks.preprocessFile.mockResolvedValue("")
@@ -50,6 +54,44 @@ beforeEach(() => {
 })
 
 describe("source-lifecycle path helpers", () => {
+  it("recognizes an explicit Windows PDF save request without treating ordinary file questions as imports", () => {
+    const path = "C:\\Users\\c1773\\Downloads\\山竹智能体-内部培训资料.pdf"
+
+    expect(sourceImportPathsFromMessage(`"${path}" 帮我保存到知识库`)).toEqual([path])
+    expect(sourceImportPathsFromMessage(`请总结 "${path}" 的内容`)).toEqual([])
+    expect(sourceImportPathsFromMessage(`不要把 "${path}" 保存到知识库`)).toEqual([])
+  })
+
+  it.each([
+    "请把文件导入资料库",
+    "把这个文件收录到山竹",
+    "请记住这个文件",
+    "归档到我的 wiki",
+    "帮我存入知识库",
+  ])("recognizes common natural-language import request: %s", (request) => {
+    const path = "C:\\Users\\c1773\\Downloads\\内部 培训资料.pdf"
+
+    expect(sourceImportPathsFromMessage(`${request} "${path}"`)).toEqual([path])
+  })
+
+  it.each([
+    "请总结这个文件",
+    "不要导入这个文件",
+    "把这个文件和最新新闻对比",
+    "请告诉我如何把这个文件导入知识库",
+    "不需要记住这个文件",
+  ])("does not turn a non-import request into a write: %s", (request) => {
+    const path = "C:\\Users\\c1773\\Downloads\\内部培训资料.pdf"
+
+    expect(sourceImportPathsFromMessage(`${request} "${path}"`)).toEqual([])
+  })
+
+  it("keeps an unsupported local path so the import flow can report the real format error", () => {
+    const path = "C:\\Users\\c1773\\Downloads\\安装程序.exe"
+
+    expect(sourceImportPathsFromMessage(`把 "${path}" 保存到知识库`)).toEqual([path])
+  })
+
   it("does not treat preprocessed cache files as ingestable sources", () => {
     expect(isIngestableSourcePath("raw/sources/.cache/report.pdf.txt")).toBe(false)
     expect(isIngestableSourcePath("/project/raw/sources/.cache/report.pdf.txt")).toBe(false)
@@ -251,6 +293,8 @@ describe("source-lifecycle path helpers", () => {
     )
 
     expect(copied.imported).toEqual(["/project/raw/sources/ready.md"])
+    expect(copied.ingestStatus).toBe("queued")
+    expect(copied.ingestTaskIds).toEqual(["task"])
     expect(mocks.copyFile).toHaveBeenCalledTimes(1)
     expect(mocks.copyFile).toHaveBeenCalledWith("/external/ready.md", "/project/raw/sources/ready.md")
     expect(mocks.copyFile).not.toHaveBeenCalledWith("/external/drafts/spec.md", expect.anything())
@@ -322,7 +366,7 @@ describe("source-lifecycle path helpers", () => {
     ])
   })
 
-  it("does not preprocess files when no usable ingest model is configured", async () => {
+  it("preprocesses and queues files through the normalized Codex ingest path", async () => {
     const queued = await enqueueSourceIngest(
       { id: "p1", name: "Project", path: "/project" },
       ["/project/raw/sources/report.pdf"],
@@ -336,9 +380,11 @@ describe("source-lifecycle path helpers", () => {
       },
     )
 
-    expect(queued).toEqual([])
-    expect(mocks.preprocessFile).not.toHaveBeenCalled()
-    expect(mocks.enqueueBatch).not.toHaveBeenCalled()
+    expect(queued).toEqual(["task"])
+    expect(mocks.preprocessFile).toHaveBeenCalledWith("/project/raw/sources/report.pdf")
+    expect(mocks.enqueueBatch).toHaveBeenCalledWith("p1", [
+      { sourcePath: "/project/raw/sources/report.pdf", folderContext: "" },
+    ])
   })
 
   it("naturally orders imported folder files before enqueueing ingest tasks", async () => {
@@ -438,6 +484,68 @@ describe("source import skip reporting", () => {
       { name: "審查資料範例.pdf", reason: "too-large", detail: "142.8 MB" },
     ])
     expect(mocks.copyFile).not.toHaveBeenCalled()
+  })
+
+  it("queues copied files through the normalized Codex ingest path", async () => {
+    const result = await importSourceFiles(
+      project,
+      ["/external/notes.md"],
+      {
+        provider: "openai",
+        apiKey: "",
+        model: "gpt-5",
+        ollamaUrl: "",
+        customEndpoint: "",
+        maxContextSize: 128_000,
+      },
+      watchConfig(),
+    )
+
+    expect(result.imported).toEqual(["/project/raw/sources/notes.md"])
+    expect(result.ingestStatus).toBe("queued")
+    expect(result.ingestTaskIds).toEqual(["task"])
+    expect(mocks.preprocessFile).toHaveBeenCalledWith("/project/raw/sources/notes.md")
+    expect(mocks.enqueueBatch).toHaveBeenCalledWith("p1", [
+      { sourcePath: "/project/raw/sources/notes.md", folderContext: "" },
+    ])
+  })
+
+  it("skips a same-name file when the knowledge base already has identical content", async () => {
+    mocks.fileExists.mockImplementation(async (path: string) =>
+      path === "/project/raw/sources/notes.md",
+    )
+    mocks.getFileMd5.mockResolvedValue("same-content")
+
+    const result = await importSourceFiles(
+      project,
+      ["/external/notes.md"],
+      llm,
+      watchConfig(),
+    )
+
+    expect(result.imported).toEqual([])
+    expect(result.skipped).toEqual([
+      { name: "notes.md", reason: "duplicate", detail: "知识库中已存在相同文件" },
+    ])
+    expect(result.ingestStatus).toBe("not-started")
+    expect(mocks.copyFile).not.toHaveBeenCalled()
+    expect(mocks.enqueueBatch).not.toHaveBeenCalled()
+  })
+
+  it("keeps a copied file and reports the queue error when ingest cannot start", async () => {
+    mocks.enqueueBatch.mockRejectedValueOnce(new Error("无法保存整理队列"))
+
+    const result = await importSourceFiles(
+      project,
+      ["/external/broken.pdf"],
+      llm,
+      watchConfig(),
+    )
+
+    expect(result.imported).toEqual(["/project/raw/sources/broken.pdf"])
+    expect(result.ingestStatus).toBe("saved-only")
+    expect(result.ingestError).toBe("无法保存整理队列")
+    expect(result.ingestTaskIds).toEqual([])
   })
 
   it("reports file types the picker offers but ingest cannot read", async () => {

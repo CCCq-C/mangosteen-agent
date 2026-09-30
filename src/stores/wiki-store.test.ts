@@ -1,6 +1,35 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { useWikiStore } from "./wiki-store"
 
+describe("Mangosteen default settings", () => {
+  it("hydrates Codex CLI as the only LLM default", () => {
+    const state = useWikiStore.getState()
+
+    expect(state.llmConfig).toMatchObject({
+      provider: "codex-cli",
+      apiKey: "",
+      model: "gpt-5.6-sol",
+    })
+    expect(state.globalLlmConfig).toMatchObject({
+      provider: "codex-cli",
+      apiKey: "",
+      model: "gpt-5.6-sol",
+    })
+  })
+
+  it("enables the local proxy and uses web research", () => {
+    const state = useWikiStore.getState()
+
+    expect(state.proxyConfig).toMatchObject({
+      enabled: true,
+      url: "http://127.0.0.1:7892",
+      bypassLocal: true,
+    })
+    expect(state.searchApiConfig.deepResearchSource).toBe("web")
+    expect(state.searchApiConfig).not.toHaveProperty("anyTxt")
+  })
+})
+
 describe("wiki preview store actions", () => {
   beforeEach(() => {
     useWikiStore.getState().setFileTree([])
@@ -111,8 +140,8 @@ describe("wiki preview store actions", () => {
       externalPreview: {
         title: "External",
         path: "remote",
-        source: "AnyTXT",
-        url: "anytxt://remote",
+        source: "Local",
+        url: "external-preview://remote",
         snippet: "snippet",
       },
     })
@@ -136,8 +165,8 @@ describe("wiki preview store actions", () => {
       externalPreview: {
         title: "External",
         path: "remote",
-        source: "AnyTXT",
-        url: "anytxt://remote",
+        source: "Local",
+        url: "external-preview://remote",
         snippet: "snippet",
       },
     })

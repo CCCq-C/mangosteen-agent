@@ -6,7 +6,6 @@ import type {
   SearXngCategory,
   SerpApiEngine,
 } from "@/stores/wiki-store"
-import { hasConfiguredAnyTxt, normalizeAnyTxtConfig } from "@/lib/anytxt-search"
 
 export interface WebSearchResult {
   title: string
@@ -16,30 +15,32 @@ export interface WebSearchResult {
 }
 
 export const DEFAULT_FIRECRAWL_URL = "https://api.firecrawl.dev"
+/** Loopback-only endpoint managed by the bundled SearXNG companion. */
+export const LOCAL_SEARCH_DEFAULT_URL = "http://127.0.0.1:17888"
 
 export const SERPAPI_ENGINE_OPTIONS: { value: SerpApiEngine; label: string; hint: string }[] = [
-  { value: "google", label: "Google Web", hint: "SerpApi Google Search API organic results" },
-  { value: "google_news", label: "Google News", hint: "News-focused results" },
-  { value: "google_scholar", label: "Google Scholar", hint: "Academic papers and citations" },
-  { value: "google_patents", label: "Google Patents", hint: "Patent search results" },
-  { value: "bing", label: "Bing", hint: "Bing organic results" },
-  { value: "duckduckgo", label: "DuckDuckGo", hint: "DuckDuckGo organic results" },
-  { value: "google_images", label: "Google Images", hint: "Image search results" },
-  { value: "google_videos", label: "Google Videos", hint: "Video search results" },
-  { value: "youtube", label: "YouTube", hint: "YouTube video results" },
+  { value: "google", label: "Google 网页", hint: "SerpApi 的 Google 常规搜索结果" },
+  { value: "google_news", label: "Google 新闻", hint: "侧重新闻内容" },
+  { value: "google_scholar", label: "Google 学术", hint: "学术论文和引用" },
+  { value: "google_patents", label: "Google 专利", hint: "专利搜索结果" },
+  { value: "bing", label: "Bing", hint: "Bing 常规搜索结果" },
+  { value: "duckduckgo", label: "DuckDuckGo", hint: "DuckDuckGo 常规搜索结果" },
+  { value: "google_images", label: "Google 图片", hint: "图片搜索结果" },
+  { value: "google_videos", label: "Google 视频", hint: "视频搜索结果" },
+  { value: "youtube", label: "YouTube", hint: "YouTube 视频结果" },
 ]
 
 export const SEARXNG_CATEGORY_OPTIONS: { value: SearXngCategory; label: string; hint: string }[] = [
-  { value: "general", label: "General", hint: "Default web results" },
-  { value: "news", label: "News", hint: "News engines" },
-  { value: "science", label: "Science", hint: "Academic and science-focused engines" },
-  { value: "it", label: "IT", hint: "Developer and technology engines" },
-  { value: "images", label: "Images", hint: "Image search results" },
-  { value: "videos", label: "Videos", hint: "Video search results" },
-  { value: "files", label: "Files", hint: "File and document search" },
-  { value: "map", label: "Map", hint: "Map and location results" },
-  { value: "music", label: "Music", hint: "Music engines" },
-  { value: "social media", label: "Social", hint: "Social media engines" },
+  { value: "general", label: "综合", hint: "默认网页结果" },
+  { value: "news", label: "新闻", hint: "新闻搜索引擎" },
+  { value: "science", label: "科学", hint: "侧重学术和科学内容" },
+  { value: "it", label: "技术", hint: "侧重开发和科技内容" },
+  { value: "images", label: "图片", hint: "图片搜索结果" },
+  { value: "videos", label: "视频", hint: "视频搜索结果" },
+  { value: "files", label: "文件", hint: "文件和文档搜索" },
+  { value: "map", label: "地图", hint: "地图和地点结果" },
+  { value: "music", label: "音乐", hint: "音乐搜索引擎" },
+  { value: "social media", label: "社交媒体", hint: "社交媒体搜索引擎" },
 ]
 
 export function resolveSearchConfig(config: SearchApiConfig): SearchApiConfig {
@@ -88,8 +89,7 @@ export function resolveSearchConfig(config: SearchApiConfig): SearchApiConfig {
       searXngCategories: config.searXngCategories ?? providerConfigs.searxng?.searXngCategories ?? ["general"],
       ollamaUrl: providerConfigs.ollama?.ollamaUrl ?? "https://ollama.com",
       providerConfigs,
-      deepResearchSource: config.deepResearchSource ?? "web",
-      anyTxt: normalizeAnyTxtConfig(config.anyTxt),
+      deepResearchSource: "web",
     }
   }
 
@@ -102,9 +102,36 @@ export function resolveSearchConfig(config: SearchApiConfig): SearchApiConfig {
     searXngCategories: activeOverride?.searXngCategories ?? config.searXngCategories ?? ["general"],
     ollamaUrl: resolvedOllamaUrl,
     providerConfigs,
-    deepResearchSource: config.deepResearchSource ?? "web",
-    anyTxt: normalizeAnyTxtConfig(config.anyTxt),
+    deepResearchSource: "web",
   }
+}
+
+/** Keep the hidden provider selection on the bundled, zero-config service. */
+export function migrateSearchConfigToLocalDefault(config: SearchApiConfig | null): SearchApiConfig | null {
+  const localOverride = config?.providerConfigs?.searxng
+  if (
+    config?.provider === "searxng"
+    && config.searXngUrl === LOCAL_SEARCH_DEFAULT_URL
+    && localOverride?.searXngUrl === LOCAL_SEARCH_DEFAULT_URL
+    && config.deepResearchSource === "web"
+  ) return null
+
+  return resolveSearchConfig({
+    ...config,
+    provider: "searxng",
+    apiKey: "",
+    searXngUrl: LOCAL_SEARCH_DEFAULT_URL,
+    searXngCategories: config?.searXngCategories ?? ["general"],
+    providerConfigs: {
+      ...(config?.providerConfigs ?? {}),
+      searxng: {
+        ...(config?.providerConfigs?.searxng ?? {}),
+        searXngUrl: LOCAL_SEARCH_DEFAULT_URL,
+        searXngCategories: config?.searXngCategories ?? ["general"],
+      },
+    },
+    deepResearchSource: "web",
+  })
 }
 
 export function hasConfiguredSearchProvider(config: SearchApiConfig): boolean {
@@ -117,14 +144,7 @@ export function hasConfiguredSearchProvider(config: SearchApiConfig): boolean {
 }
 
 export function hasConfiguredDeepResearchSources(config: SearchApiConfig): boolean {
-  const resolved = resolveSearchConfig(config)
-  const source = resolved.deepResearchSource ?? "web"
-  const webConfigured = hasConfiguredSearchProvider(resolved)
-  const anyTxtConfigured = hasConfiguredAnyTxt(resolved.anyTxt)
-
-  if (source === "web") return webConfigured
-  if (source === "anytxt") return anyTxtConfigured
-  return webConfigured || anyTxtConfigured
+  return hasConfiguredSearchProvider(config)
 }
 
 export async function webSearch(

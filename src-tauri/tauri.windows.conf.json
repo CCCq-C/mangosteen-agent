@@ -9,8 +9,16 @@
     ]
   },
   "bundle": {
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/nsis-hooks.nsh",
+        "languages": ["SimpChinese", "English"],
+        "startMenuFolder": "山竹智能体"
+      }
+    },
     "resources": {
       "pdfium/pdfium.dll": "pdfium/pdfium.dll",
+      "local-search-runtime": "local-search-runtime",
       "../mcp-server/package.json": "mcp-server/package.json",
       "../mcp-server/dist": "mcp-server/dist",
       "../mcp-server/node_modules": "mcp-server/node_modules"

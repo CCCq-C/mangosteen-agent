@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react"
-import { BrainCircuit, ChevronDown, FileSearch, FileText, Globe2, ImagePlus, Send, Sparkles, Square, X } from "lucide-react"
+import { BrainCircuit, ChevronDown, FileText, ImagePlus, Send, Sparkles, Square, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { isImeComposing } from "@/lib/keyboard-utils"
 import type { MessageImage } from "@/stores/chat-store"
 import type { ChatAgentMode, ChatRetrievalMode } from "@/lib/chat-agent-types"
@@ -17,7 +16,6 @@ import {
 
 export interface ChatSendOptions {
   useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   skills: string[]
@@ -134,20 +132,16 @@ interface ChatInputProps {
   onStop: () => void
   isStreaming: boolean
   useWebSearch: boolean
-  useAnyTxtSearch: boolean
   agentMode: ChatAgentMode
   retrievalMode: ChatRetrievalMode
   availableSkills: ChatSkillOption[]
   selectedSkills: string[]
   availableContextFiles: string[]
   selectedContextFiles: string[]
-  onUseWebSearchChange: (enabled: boolean) => void
-  onUseAnyTxtSearchChange: (enabled: boolean) => void
   onAgentModeChange: (mode: ChatAgentMode) => void
   onRetrievalModeChange: (mode: ChatRetrievalMode) => void
   onSelectedSkillsChange: (skills: string[]) => void
   onSelectedContextFilesChange: (paths: string[]) => void
-  anyTxtAvailable?: boolean
   imageInputAvailable?: boolean
   placeholder?: string
 }
@@ -157,20 +151,16 @@ export function ChatInput({
   onStop,
   isStreaming,
   useWebSearch,
-  useAnyTxtSearch,
   agentMode,
   retrievalMode,
   availableSkills,
   selectedSkills,
   availableContextFiles,
   selectedContextFiles,
-  onUseWebSearchChange,
-  onUseAnyTxtSearchChange,
   onAgentModeChange,
   onRetrievalModeChange,
   onSelectedSkillsChange,
   onSelectedContextFilesChange,
-  anyTxtAvailable = true,
   imageInputAvailable = true,
   placeholder,
 }: ChatInputProps) {
@@ -234,10 +224,6 @@ export function ChatInput({
     && contextFileOptions.length > 0
     && !isStreaming
   )
-
-  useEffect(() => {
-    if (!anyTxtAvailable && useAnyTxtSearch) onUseAnyTxtSearchChange(false)
-  }, [anyTxtAvailable, onUseAnyTxtSearchChange, useAnyTxtSearch])
 
   useEffect(() => {
     setSlashSkillIndex(0)
@@ -373,7 +359,6 @@ export function ChatInput({
     }
     onSend(trimmed, images, {
       useWebSearch,
-      useAnyTxtSearch,
       agentMode,
       retrievalMode,
       skills: selectedSkills,
@@ -387,7 +372,7 @@ export function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto"
     }
-  }, [agentMode, imageInputAvailable, images, isStreaming, onSend, retrievalMode, selectedContextFiles, selectedSkills, t, useAnyTxtSearch, useWebSearch, value])
+  }, [agentMode, imageInputAvailable, images, isStreaming, onSend, retrievalMode, selectedContextFiles, selectedSkills, t, useWebSearch, value])
 
   const applySlashSkill = useCallback(
     (skill: ChatSkillOption) => {
@@ -615,7 +600,7 @@ export function ChatInput({
             onSelect={handleSelect}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={placeholder ?? "Type a message... (Enter to send, Shift+Enter for newline)"}
+            placeholder={placeholder ?? "输入消息……（回车键发送，Shift+回车键换行）"}
             disabled={isStreaming}
             rows={1}
             className="min-w-[12rem] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-sm leading-6 placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -706,51 +691,6 @@ export function ChatInput({
                 <span className="hidden sm:inline">{t("chat.attachImage")}</span>
               </button>
             </span>
-            <button
-              type="button"
-              aria-pressed={useWebSearch}
-              onClick={() => onUseWebSearchChange(!useWebSearch)}
-              disabled={isStreaming}
-              className={searchToggleClass(useWebSearch)}
-            >
-              <Globe2 className="h-3.5 w-3.5" />
-              {t("chat.useWebSearch")}
-              <span
-                className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
-                  useWebSearch ? "bg-emerald-500" : "bg-muted-foreground/30"
-                }`}
-              />
-            </button>
-            <TooltipProvider delay={0}>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="inline-flex" />
-                  }
-                >
-                  <button
-                    type="button"
-                    aria-pressed={useAnyTxtSearch}
-                    onClick={() => onUseAnyTxtSearchChange(!useAnyTxtSearch)}
-                    disabled={isStreaming || !anyTxtAvailable}
-                    className={searchToggleClass(useAnyTxtSearch)}
-                  >
-                    <FileSearch className="h-3.5 w-3.5" />
-                    {t("chat.useAnyTxtSearch")}
-                    <span
-                      className={`ml-0.5 h-1.5 w-1.5 rounded-full ${
-                        useAnyTxtSearch ? "bg-emerald-500" : "bg-muted-foreground/30"
-                      }`}
-                    />
-                  </button>
-                </TooltipTrigger>
-                {!anyTxtAvailable && (
-                  <TooltipContent side="top" className="max-w-64 whitespace-normal leading-relaxed">
-                    {t("chat.enableAnyTxtInSettings")}
-                  </TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
             <div className="relative">
               <button
                 type="button"
@@ -774,7 +714,7 @@ export function ChatInput({
                     {t("chat.enabledSkills")}
                     {selectedSkills.length === 0 && (
                       <span className="ml-1 font-normal text-muted-foreground">
-                        {t("chat.skillsAutoMode", { defaultValue: "Auto" })}
+                        {t("chat.skillsAutoMode", { defaultValue: "自动" })}
                       </span>
                     )}
                   </div>

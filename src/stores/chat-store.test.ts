@@ -11,14 +11,21 @@ describe("chat-store conversation isolation", () => {
       streamingContent: "",
       mode: "chat",
       ingestSource: null,
-      useWebSearch: false,
-      useAnyTxtSearch: false,
+      useWebSearch: true,
       agentMode: "standard",
       retrievalMode: "standard",
       selectedSkills: [],
       selectedContextFiles: [],
       disabledSkills: [],
     })
+  })
+
+  it("keeps web search enabled when a caller tries to disable it", () => {
+    expect(useChatStore.getState().useWebSearch).toBe(true)
+
+    useChatStore.getState().setUseWebSearch(false)
+
+    expect(useChatStore.getState().useWebSearch).toBe(true)
   })
 
   it("defaults to standard retrieval and allows explicit retrieval modes", () => {
@@ -50,6 +57,18 @@ describe("chat-store conversation isolation", () => {
       "first answer",
     ])
     expect(secondMessages).toEqual([])
+  })
+
+  it("does not finalize an empty assistant answer that only has retrieval references", () => {
+    const conversationId = useChatStore.getState().createConversation()
+    useChatStore.getState().setStreaming(true)
+
+    useChatStore.getState().finalizeStreamForConversation(conversationId, "   ", [
+      { title: "Retrieved note", path: "wiki/note.md", kind: "wiki" },
+    ])
+
+    expect(useChatStore.getState().messages).toEqual([])
+    expect(useChatStore.getState().isStreaming).toBe(false)
   })
 
   it("clears stale stream content when a new stream starts", () => {

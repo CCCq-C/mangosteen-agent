@@ -4,14 +4,16 @@ import {
   addResearchTaskDiscriminator,
   buildResearchPageContent,
   collectResearchSources,
+  getDeepResearchRuntimeConfig,
   makeDeepResearchFileName,
   makeAvailableResearchFilePath,
   noResearchSourcesTaskPatch,
   researchPageIdFromPath,
+  resolveResearchQueries,
   resolveReviewForSavedResearch,
   validateResearchSynthesis,
 } from "./deep-research"
-import type { SearchApiConfig } from "@/stores/wiki-store"
+import type { LlmConfig, SearchApiConfig } from "@/stores/wiki-store"
 import type { WebSearchResult } from "./web-search"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useResearchStore } from "@/stores/research-store"
@@ -22,13 +24,6 @@ const webResult: WebSearchResult = {
   url: "https://example.com/web",
   snippet: "web snippet",
   source: "example.com",
-}
-
-const localResult: WebSearchResult = {
-  title: "Local",
-  url: "file:///C:/docs/local.md",
-  snippet: "local snippet",
-  source: "AnyTXT",
 }
 
 function config(patch: Partial<SearchApiConfig>): SearchApiConfig {
@@ -87,8 +82,8 @@ describe("buildResearchPageContent", () => {
       "Substantive synthesis [1].",
       "1. [Source](https://example.com)",
     )
-    expect(content).toContain('title: "Research: first line second: \\"quoted\\""')
-    expect(content).toContain("# Research: first line second: \"quoted\"")
+    expect(content).toContain('title: "专题研究：first line second: \\"quoted\\""')
+    expect(content).toContain("# 专题研究：first line second: \"quoted\"")
     expect(content).not.toContain("first line\nsecond")
   })
 })
@@ -147,7 +142,7 @@ describe("validateResearchSynthesis", () => {
     const result = validateResearchSynthesis(substantiveChinese.replace(/\[\d+\]/g, ""), 2)
 
     expect(result.valid).toBe(false)
-    expect(result.error).toContain("did not cite")
+    expect(result.error).toContain("没有引用")
   })
 
   it("extracts valid citation groups and bounded ranges", () => {
@@ -158,17 +153,17 @@ describe("validateResearchSynthesis", () => {
 
 describe("noResearchSourcesTaskPatch", () => {
   it("marks source failures as an error instead of completed", () => {
-    expect(noResearchSourcesTaskPatch(["Firecrawl blocked this IP", "AnyTXT offline"])).toEqual({
+    expect(noResearchSourcesTaskPatch(["Firecrawl blocked this IP", "Search offline"])).toEqual({
       status: "error",
       synthesis: "",
-      error: "Firecrawl blocked this IP\nAnyTXT offline",
+      error: "Firecrawl blocked this IP\nSearch offline",
     })
   })
 
   it("marks an empty successful search as done", () => {
     expect(noResearchSourcesTaskPatch([])).toEqual({
       status: "done",
-      synthesis: "No research sources found.",
+      synthesis: "没有找到可用的研究资料。",
       error: null,
     })
   })
@@ -209,7 +204,7 @@ describe("review-linked research", () => {
     )).toBe(true)
     expect(useReviewStore.getState().items[0]).toMatchObject({
       resolved: true,
-      resolvedAction: "Research saved: wiki/queries/research-topic.md",
+      resolvedAction: "专题研究已保存：wiki/queries/research-topic.md",
     })
   })
 
@@ -290,119 +285,45 @@ describe("review-linked research", () => {
 })
 
 describe("collectResearchSources", () => {
-  it("uses only Web Search when source mode is web", async () => {
+  it("uses Web Search", async () => {
     const webSearch = vi.fn().mockResolvedValue([webResult])
-    const anyTxtSearch = vi.fn().mockResolvedValue([localResult])
 
     const out = await collectResearchSources(
       ["alpha"],
       config({ deepResearchSource: "web", provider: "tavily", apiKey: "tvly" }),
       "/project",
-      { webSearch, anyTxtSearch },
+      { webSearch },
     )
 
     expect(webSearch).toHaveBeenCalledTimes(1)
-    expect(anyTxtSearch).not.toHaveBeenCalled()
     expect(out.results).toEqual([webResult])
   })
 
-  it("uses only AnyTXT when source mode is anytxt", async () => {
+  it("skips Web Search when no web provider is configured", async () => {
     const webSearch = vi.fn().mockResolvedValue([webResult])
-    const anyTxtSearch = vi.fn().mockResolvedValue([localResult])
 
     const out = await collectResearchSources(
       ["alpha"],
-      config({
-        deepResearchSource: "anytxt",
-        provider: "tavily",
-        apiKey: "tvly",
-        anyTxt: { endpoint: "http://127.0.0.1:9920" },
-      }),
+      config({ provider: "none" }),
       "/project",
-      { webSearch, anyTxtSearch },
+      { webSearch },
     )
 
     expect(webSearch).not.toHaveBeenCalled()
-    expect(anyTxtSearch).toHaveBeenCalledTimes(1)
-    expect(anyTxtSearch.mock.calls[0][0]).toEqual(["alpha"])
-    expect(out.results).toEqual([localResult])
-  })
-
-  it("uses both sources concurrently and deduplicates by URL", async () => {
-    const duplicate = { ...localResult, url: webResult.url }
-    const webSearch = vi.fn().mockResolvedValue([webResult])
-    const anyTxtSearch = vi.fn().mockResolvedValue([duplicate, localResult])
-
-    const out = await collectResearchSources(
-      ["alpha"],
-      config({
-        deepResearchSource: "both",
-        provider: "tavily",
-        apiKey: "tvly",
-        anyTxt: { endpoint: "http://127.0.0.1:9920" },
-      }),
-      "/project",
-      { webSearch, anyTxtSearch },
-    )
-
-    expect(webSearch).toHaveBeenCalledTimes(1)
-    expect(anyTxtSearch).toHaveBeenCalledTimes(1)
-    expect(out.results).toEqual([webResult, localResult])
-  })
-
-  it("keeps web results when AnyTXT fails and exposes the source error", async () => {
-    const webSearch = vi.fn().mockResolvedValue([webResult])
-    const anyTxtSearch = vi.fn().mockRejectedValue(new Error("Check that ATGUI.exe is running"))
-
-    const out = await collectResearchSources(
-      ["alpha"],
-      config({
-        deepResearchSource: "both",
-        provider: "tavily",
-        apiKey: "tvly",
-        anyTxt: { endpoint: "http://127.0.0.1:9920" },
-      }),
-      "/project",
-      { webSearch, anyTxtSearch },
-    )
-
-    expect(out.results).toEqual([webResult])
-    expect(out.errors).toEqual(["Check that ATGUI.exe is running"])
-  })
-
-  it("skips Web Search in both mode when no web provider is configured", async () => {
-    const webSearch = vi.fn().mockResolvedValue([webResult])
-    const anyTxtSearch = vi.fn().mockResolvedValue([localResult])
-
-    const out = await collectResearchSources(
-      ["alpha"],
-      config({
-        deepResearchSource: "both",
-        provider: "none",
-        anyTxt: { endpoint: "http://127.0.0.1:9920" },
-      }),
-      "/project",
-      { webSearch, anyTxtSearch },
-    )
-
-    expect(webSearch).not.toHaveBeenCalled()
-    expect(anyTxtSearch).toHaveBeenCalledTimes(1)
-    expect(out.results).toEqual([localResult])
+    expect(out.results).toEqual([])
   })
 
   it("returns no results for blank queries", async () => {
     const webSearch = vi.fn().mockResolvedValue([webResult])
-    const anyTxtSearch = vi.fn().mockResolvedValue([localResult])
 
     const out = await collectResearchSources(
       [" ", ""],
-      config({ deepResearchSource: "both", provider: "tavily", apiKey: "tvly" }),
+      config({ deepResearchSource: "web", provider: "tavily", apiKey: "tvly" }),
       "/project",
-      { webSearch, anyTxtSearch },
+      { webSearch },
     )
 
     expect(webSearch).not.toHaveBeenCalled()
-    expect(anyTxtSearch).not.toHaveBeenCalled()
     expect(out.results).toEqual([])
   })
 
@@ -416,17 +337,103 @@ describe("collectResearchSources", () => {
         source: "example.com",
       })),
     )
-    const anyTxtSearch = vi.fn().mockResolvedValue([])
-
     const out = await collectResearchSources(
       ["alpha", "beta"],
       config({ deepResearchSource: "web", provider: "tavily", apiKey: "tvly" }),
       "/project",
-      { webSearch, anyTxtSearch },
+      { webSearch },
     )
 
     expect(out.results).toHaveLength(20)
     expect(infoSpy).toHaveBeenCalledTimes(1)
     infoSpy.mockRestore()
+  })
+})
+
+describe("getDeepResearchRuntimeConfig", () => {
+  it("uses the current chat model and built-in search instead of stale caller snapshots", () => {
+    useWikiStore.setState({
+      llmConfig: {
+        provider: "openai",
+        apiKey: "",
+        model: "",
+        ollamaUrl: "http://localhost:11434",
+        customEndpoint: "",
+        maxContextSize: 204800,
+      },
+      providerConfigs: {
+        deepseek: {
+          apiKey: "deepseek-key",
+          model: "deepseek-v4-flash",
+          baseUrl: "https://api.deepseek.com/v1",
+        },
+      },
+      taskModelRouting: { chatPresetId: "deepseek", ingestPresetId: null },
+      projectLlmOverride: { enabled: false, presetId: null, model: "" },
+      searchApiConfig: config({
+        provider: "searxng",
+        searXngUrl: "http://127.0.0.1:17888",
+      }),
+    })
+
+    expect(getDeepResearchRuntimeConfig()).toMatchObject({
+      llmConfig: {
+        provider: "codex-cli",
+        apiKey: "",
+        model: "gpt-5.6-sol",
+        customEndpoint: "",
+      },
+      searchConfig: {
+        provider: "searxng",
+        searXngUrl: "http://127.0.0.1:17888",
+      },
+    })
+  })
+})
+
+describe("resolveResearchQueries", () => {
+  const llmConfig: LlmConfig = {
+    provider: "custom",
+    apiKey: "key",
+    model: "model",
+    ollamaUrl: "http://localhost:11434",
+    customEndpoint: "https://example.com/v1",
+    maxContextSize: 128000,
+  }
+
+  it("generates multiple queries for an ordinary DeepSearch topic", async () => {
+    const queries = await resolveResearchQueries(
+      "国产 AI 智能体",
+      undefined,
+      llmConfig,
+      async () => ({
+        topic: "国产 AI 智能体研究",
+        searchQueries: ["市场格局", "主要产品", "技术路线", "用户评价"],
+      }),
+    )
+
+    expect(queries).toEqual(["市场格局", "主要产品", "技术路线", "用户评价"])
+  })
+
+  it("keeps pre-generated queries without generating another set", async () => {
+    const queries = await resolveResearchQueries(
+      "topic",
+      ["existing 1", "existing 2"],
+      llmConfig,
+      async () => { throw new Error("must not run") },
+    )
+
+    expect(queries).toEqual(["existing 1", "existing 2"])
+  })
+
+  it("falls back to the original topic when query generation fails", async () => {
+    const queries = await resolveResearchQueries(
+      "original topic",
+      undefined,
+      llmConfig,
+      async () => { throw new Error("model unavailable") },
+    )
+
+    expect(queries).toEqual(["original topic"])
   })
 })

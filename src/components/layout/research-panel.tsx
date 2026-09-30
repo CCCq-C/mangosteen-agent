@@ -6,7 +6,7 @@ import rehypeKatex from "rehype-katex"
 import "katex/dist/katex.min.css"
 import {
   Search, Loader2, CheckCircle2, AlertCircle, ChevronRight, ChevronDown, X,
-  FileSearch, FileText, Globe2, Send, RotateCcw,
+  FileText, Globe2, Send, RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { hasActiveResearchRerun, useResearchStore, type ResearchTask } from "@/stores/research-store"
@@ -29,7 +29,6 @@ export function ResearchPanel() {
   const removeTask = useResearchStore((s) => s.removeTask)
   const setPanelOpen = useResearchStore((s) => s.setPanelOpen)
   const project = useWikiStore((s) => s.project)
-  const llmConfig = useWikiStore((s) => s.llmConfig)
   const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
   const [inputValue, setInputValue] = useState("")
 
@@ -44,7 +43,7 @@ export function ResearchPanel() {
       await appDialog.alert({ message: t("research.notConfigured") })
       return
     }
-    queueResearch(normalizePath(project.path), topic, llmConfig, searchApiConfig)
+    queueResearch(normalizePath(project.path), topic)
     setInputValue("")
   }
 
@@ -63,8 +62,6 @@ export function ResearchPanel() {
         sourceReviewId: task.sourceReviewId,
         rerunOfTaskId: task.id,
       }],
-      llmConfig,
-      searchApiConfig,
     )
   }
 
@@ -326,18 +323,13 @@ function ResearchTaskCard({
               </div>
               <div className="flex flex-col gap-1">
                 {task.webResults.map((r, i) => {
-                  const isAnyTxt = r.source.toLowerCase() === "anytxt"
-                  const SourceIcon = isAnyTxt ? FileSearch : Globe2
                   return (
                     <div key={i} className="flex items-start gap-1.5 rounded bg-muted/50 px-2 py-1">
                       <span className="shrink-0 font-mono text-muted-foreground">[{i + 1}]</span>
-                      <SourceIcon
-                        className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${isAnyTxt ? "text-amber-600" : "text-blue-600"}`}
-                        aria-label={isAnyTxt ? t("research.anyTxtSource") : t("research.webSource")}
-                      />
+                      <Globe2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-600" aria-label={t("research.webSource")} />
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">{r.title}</div>
-                        <div className="truncate text-muted-foreground">{isAnyTxt ? "AnyTXT" : r.source}</div>
+                        <div className="truncate text-muted-foreground">{r.source}</div>
                       </div>
                     </div>
                   )

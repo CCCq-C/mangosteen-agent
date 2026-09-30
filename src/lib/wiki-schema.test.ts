@@ -72,7 +72,7 @@ describe("validateWikiPageRouting", () => {
       routing,
     )
 
-    expect(issue?.message).toContain('type "source" must be under "wiki/sources/"')
+    expect(issue?.message).toContain('“source”类型页面必须放在“wiki/sources/”')
   })
 
   it("allows custom schema types routed by the table", () => {
