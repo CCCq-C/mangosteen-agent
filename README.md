@@ -506,3 +506,11 @@ my-wiki/
 ## License
 
 This project is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE) for details.
+
+---
+
+## 深入学习与交流
+
+如果想要深入学习、研究或者交流，可以扫描下方二维码添加我。
+
+<img src="./contact-qr.png" alt="微信二维码" width="269" height="269">
